@@ -650,11 +650,6 @@ def set_tags(full_name_or_article: _FullNameOrArticle, tags: Sequence[Union[str,
             article.tags.add(tag)
             added_tags.append({'id': tag.id, 'name': tag.full_name})
 
-    if article.get_settings().creating_tags_allowed:
-        # garbage collect tags if anything was removed
-        Tag.objects.annotate(num_articles=Count('articles')).filter(num_articles=0).delete()
-        TagsCategory.objects.annotate(num_tags=Count('tag')).filter(num_tags=0, slug=F('name')).delete()
-
     if (removed_tags or added_tags) and log:
         log = ArticleLogEntry(
             article=article,
@@ -663,6 +658,11 @@ def set_tags(full_name_or_article: _FullNameOrArticle, tags: Sequence[Union[str,
             meta={'added_tags': added_tags, 'removed_tags': removed_tags}
         )
         add_log_entry(article, log)
+
+    if article.get_settings().creating_tags_allowed:
+        # garbage collect tags if anything was removed
+        Tag.objects.annotate(num_articles=Count('articles')).filter(num_articles=0).delete()
+        TagsCategory.objects.annotate(num_tags=Count('tag')).filter(num_tags=0, slug=F('name')).delete()
 
 
 # Get article comment info

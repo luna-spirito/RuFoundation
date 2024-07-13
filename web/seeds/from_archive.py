@@ -43,7 +43,7 @@ def maybe_load_pages_meta(base_path_or_list):
 
 
 def run_in_threads(fn, pages):
-    thread_count = 4
+    thread_count = 1
     per_thread_pages = []
     for i in range(thread_count):
         single_thread_cnt = int(math.ceil(len(pages) / thread_count))
@@ -253,7 +253,8 @@ def run(base_path):
 
             with py7zr.SevenZipFile(fn_7z) as z:
                 all_file_names = ['%d.txt' % x['revision'] for x in revisions if 'S' in x['flags'] or 'N' in x['flags']]
-                text_revisions = z.read(all_file_names)
+                text_revisions = z.read([x for x in z.getnames() if os.path.basename(x) in all_file_names])
+                text_revisions = {os.path.basename(key): value for key, value in text_revisions.items()}
                 for revision in revisions:
                     total_cnt_rev += 1
                     # add revision content if it's source revision
