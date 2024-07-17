@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block h1 %}{% block title %}Сброс пароля{% endblock %}{% endblock %}
+{% block h1 %}{% block title %}Регистрация/сброс пароля{% endblock %}{% endblock %}
 
 {% block content %}
     <div class="login-form">
-        <p>Забыли пароль? Введите адрес электронной почты, и мы отправим вам инструкцию для сброса пароля.</p>
+        <p>Введите адрес электронной почты, и мы отправим вам инструкцию для регистрации/сброса пароля.</p>
         <form method="POST">
             {% csrf_token %}
             <div class="text-input">
