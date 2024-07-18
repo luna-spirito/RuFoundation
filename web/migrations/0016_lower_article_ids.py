@@ -10,6 +10,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL('update web_article set name=lower(name), category=lower(category)'),
-        migrations.RunSQL('update web_externallink set link_from=lower(link_from), link_to=lower(link_to)')
+        # migrations.RunSQL('update web_article set name=lower(name), category=lower(category)'),
+        # migrations.RunSQL('update web_externallink set link_from=lower(link_from), link_to=lower(link_to)')
     ]

@@ -1,6 +1,5 @@
 import auto_prefetch
 from django.core.validators import RegexValidator
-from django.contrib.postgres.fields import CITextField
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
@@ -30,7 +29,8 @@ class User(AbstractUser):
         System = 'system'
         Bot = 'bot'
 
-    username = CITextField(
+    username = models.TextField(
+        db_collation = "und-u-ks-level2", 
         max_length=150, validators=[StrictUsernameValidator()], unique=True,
         verbose_name="Имя пользователя",
         error_messages={
@@ -38,7 +38,7 @@ class User(AbstractUser):
         },
     )
 
-    wikidot_username = CITextField(unique=True, max_length=150, validators=[StrictUsernameValidator()], verbose_name="Имя пользователя на Wikidot", null=True, blank=False)
+    wikidot_username = models.TextField(db_collation = "und-u-ks-level2", unique=True, max_length=150, validators=[StrictUsernameValidator()], verbose_name="Имя пользователя на Wikidot", null=True, blank=False)
 
     type = models.TextField(choices=UserType.choices, default=UserType.Normal, verbose_name="Тип")
 
