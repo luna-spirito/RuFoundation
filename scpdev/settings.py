@@ -94,13 +94,17 @@ WSGI_APPLICATION = 'scpdev.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_PG_DATABASE', 'scpwiki'),
-        'USER': os.environ.get('DB_PG_USERNAME', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PG_PASSWORD', 'zaq123'),
-        'HOST': os.environ.get('DB_PG_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PG_PORT', '5432'),
-        'ATOMIC_REQUESTS': True
+        'ENGINE': 'django_cockroachdb',
+        'NAME': os.environ.get('DB_DATABASE', 'scpwiki'),
+        'USER': os.environ.get('DB_USERNAME', 'scpwiki'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '26257'),
+        'OPTIONS': {
+            'sslmode': 'verify-full',
+            'sslrootcert': os.environ.get('DB_ROOT_CERT'),
+            'sslcert':     os.environ.get('DB_CERT'),
+            'sslkey':      os.environ.get('DB_KEY')
+        }
     }
 }
 
