@@ -33,11 +33,11 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='user',
             name='username',
-            field=models.TextField(db_collation = "case_insensitive", error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, unique=True, validators=[django.contrib.auth.validators.ASCIIUsernameValidator()], verbose_name='Имя пользователя'),
+            field=models.TextField(db_collation = "und-u-ks-level2", error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, unique=True, validators=[django.contrib.auth.validators.ASCIIUsernameValidator()], verbose_name='Имя пользователя'),
         ),
         migrations.AlterField(
             model_name='user',
             name='wikidot_username',
-            field=models.TextField(db_collation = "case_insensitive", max_length=150, null=True, unique=True, validators=[django.contrib.auth.validators.ASCIIUsernameValidator()], verbose_name='Имя пользователя на Wikidot'),
+            field=models.TextField(db_collation = "und-u-ks-level2", max_length=150, null=True, unique=True, validators=[django.contrib.auth.validators.ASCIIUsernameValidator()], verbose_name='Имя пользователя на Wikidot'),
         ),
     ]

@@ -15,12 +15,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        CreateCollation(
-            "case_insensitive",
-            provider="icu",
-            locale="und-u-ks-level2",
-            deterministic=False,
-        ),
         migrations.CreateModel(
             name='Article',
             fields=[

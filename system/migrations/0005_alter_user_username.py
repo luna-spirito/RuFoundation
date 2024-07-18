@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='user',
             name='username',
-            field=models.TextField(db_collation = "case_insensitive", error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, unique=True, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя'),
+            field=models.TextField(db_collation = "und-u-ks-level2", error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, unique=True, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя'),
         ),
     ]
