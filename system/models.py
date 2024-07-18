@@ -7,7 +7,7 @@ from django.db import models
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import re
-
+from django.db.models.functions import Collate
 
 class StrictUsernameValidator(RegexValidator):
     regex = r"^[\w.-]+\Z"
@@ -16,7 +16,6 @@ class StrictUsernameValidator(RegexValidator):
         "numbers, and ./-/_ characters."
     )
     flags = re.ASCII
-
 
 class User(AbstractUser):
     class Meta:
@@ -30,7 +29,6 @@ class User(AbstractUser):
         Bot = 'bot'
 
     username = models.TextField(
-        db_collation = "und-u-ks-level2", 
         max_length=150, validators=[StrictUsernameValidator()], unique=True,
         verbose_name="Имя пользователя",
         error_messages={
@@ -38,7 +36,7 @@ class User(AbstractUser):
         },
     )
 
-    wikidot_username = models.TextField(db_collation = "und-u-ks-level2", unique=True, max_length=150, validators=[StrictUsernameValidator()], verbose_name="Имя пользователя на Wikidot", null=True, blank=False)
+    wikidot_username = models.TextField(unique=True, max_length=150, validators=[StrictUsernameValidator()], verbose_name="Имя пользователя на Wikidot", null=True, blank=False)
 
     type = models.TextField(choices=UserType.choices, default=UserType.Normal, verbose_name="Тип")
 

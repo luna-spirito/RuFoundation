@@ -3,7 +3,6 @@
 import django.contrib.auth.validators
 from django.db import migrations, models
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -14,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='user',
             name='username',
-            field=models.TextField(db_collation = "und-u-ks-level2", error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя'),
+            field=models.TextField(error_messages={'unique': 'Пользователь с данным именем уже существует'}, max_length=150, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя'),
         ),
     ]

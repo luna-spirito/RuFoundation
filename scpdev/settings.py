@@ -91,6 +91,7 @@ WSGI_APPLICATION = 'scpdev.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.0/ref/settings/#databases
+CONN_MAX_AGE = 300
 
 DATABASES = {
     'default': {

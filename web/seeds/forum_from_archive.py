@@ -162,7 +162,8 @@ def run(base_path):
             if thread['posts']:
                 with py7zr.SevenZipFile(post_data_7z) as z:
                     all_file_names = post_filenames(thread['posts'])
-                    post_contents = z.read(all_file_names)
+                    post_contents = z.read([x for x in z.getnames() if os.sep.join(x.split(os.sep)[-2:]) in all_file_names])
+                    post_contents = {os.sep.join(key.split(os.sep)[-2:]): value for key, value in post_contents.items()}
             else:
                 post_contents = dict()
 
@@ -333,7 +334,7 @@ def element_to_source(el):
         contents = '> ' + '\n> '.join(elements_to_source(el).strip().split('\n')) + '\n'
         return contents
     elif el.name == 'div':
-        if element_has_allowed_class(el, ['rimg', 'limg', 'cimg', 'blockquote', 'сimg', 'scpnet-progress-bar', 'scpnet-progress-bar__tick', 'block-error', 'collapsible-block-unfolded-link']):
+        if element_has_allowed_class(el, ['rimg', 'limg', 'cimg', 'blockquote', 'сimg', 'scpnet-progress-bar', 'scpnet-progress-bar__tick', 'block-error', 'collapsible-block-unfolded-link', "snowflakes", "snowflake"]):
             return '[[div%s]]\n%s[[/div]]\n' % (attrs_to_source(el), elements_to_source(el))
         elif 'collapsible-block' in el['class']:
             # detect collapsibles

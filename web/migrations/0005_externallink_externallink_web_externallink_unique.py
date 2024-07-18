@@ -3,7 +3,6 @@
 from django.db import migrations, models
 import django.db.models.deletion
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -15,8 +14,8 @@ class Migration(migrations.Migration):
             name='ExternalLink',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('link_from', models.TextField(db_collation = "und-u-ks-level2", verbose_name='Ссылающаяся статья')),
-                ('link_to', models.TextField(db_collation = "und-u-ks-level2", verbose_name='Целевая статья')),
+                ('link_from', models.TextField(verbose_name='Ссылающаяся статья')),
+                ('link_to', models.TextField(verbose_name='Целевая статья')),
                 ('link_type', models.TextField(choices=[('include', 'Include'), ('link', 'Link')], verbose_name='Тип ссылки')),
                 ('site', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='web.site', verbose_name='Сайт')),
             ],

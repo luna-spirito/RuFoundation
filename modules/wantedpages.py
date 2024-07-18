@@ -37,14 +37,14 @@ def render(context, params):
 
     filtered_pages, _, _, _, _ = query_pages(context.article, params, context.user, allow_pagination=False, always_query=True)
 
-    filtered_pages_names = filtered_pages.annotate(full_name=Concat('category', V(':'), 'name', output_field=TextField(db_collation = "und-u-ks-level2"))).values('full_name')
+    filtered_pages_names = filtered_pages.annotate(full_name=Concat('category', V(':'), 'name', output_field=models.TextField())).values('full_name')
     
     all_articles = Article.objects.values('name', 'category', 'title') \
-      .annotate(full_name=Concat('category', V(':'), 'name', output_field=TextField(db_collation = "und-u-ks-level2")))
+      .annotate(full_name=Concat('category', V(':'), 'name', output_field=models.TextField()))
     q = ExternalLink.objects.filter(link_type='link') \
-      .annotate(link_from_complete=Case(When(~Q(link_from__contains=':'), then=Concat(V('_default:'), 'link_from', output_field=TextField(db_collation = "und-u-ks-level2"))), default='link_from')) \
+      .annotate(link_from_complete=Case(When(~Q(link_from__contains=':'), then=Concat(V('_default:'), 'link_from', output_field=models.TextField())), default='link_from')) \
       .filter(link_from_complete__in=Subquery(filtered_pages_names)) \
-      .annotate(link_to_complete=Case(When(~Q(link_to__contains=':'), then=Concat(V('_default:'), 'link_to', output_field=TextField(db_collation = "und-u-ks-level2"))), default='link_to'))
+      .annotate(link_to_complete=Case(When(~Q(link_to__contains=':'), then=Concat(V('_default:'), 'link_to', output_field=models.TextField())), default='link_to'))
 
     q = q.exclude(link_to_complete__in=all_articles.values('full_name'))
 

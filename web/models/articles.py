@@ -219,6 +219,6 @@ class ExternalLink(SiteLimitedModel):
         Include = 'include'
         Link = 'link'
 
-    link_from = models.TextField(db_collation = "und-u-ks-level2", verbose_name="Ссылающаяся статья", null=False)
-    link_to = models.TextField(db_collation = "und-u-ks-level2", verbose_name="Целевая статья", null=False)
+    link_from = models.TextField(verbose_name="Ссылающаяся статья", null=False)
+    link_to = models.TextField(verbose_name="Целевая статья", null=False)
     link_type = models.TextField(choices=Type.choices, verbose_name="Тип ссылки", null=False)

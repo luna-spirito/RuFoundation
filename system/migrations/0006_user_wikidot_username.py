@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='user',
             name='wikidot_username',
-            field=models.TextField(db_collation = "und-u-ks-level2", null=True, unique=True, verbose_name='Имя пользователя на Wikidot'),
+            field=models.TextField(null=True, unique=True, verbose_name='Имя пользователя на Wikidot'),
         ),
     ]

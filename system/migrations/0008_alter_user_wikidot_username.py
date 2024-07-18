@@ -3,7 +3,6 @@
 import django.contrib.auth.validators
 from django.db import migrations, models
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -14,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='user',
             name='wikidot_username',
-            field=models.TextField(db_collation = "und-u-ks-level2", max_length=150, null=True, unique=True, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя на Wikidot'),
+            field=models.TextField(max_length=150, null=True, unique=True, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='Имя пользователя на Wikidot'),
         ),
     ]
