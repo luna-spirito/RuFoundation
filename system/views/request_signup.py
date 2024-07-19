@@ -24,7 +24,7 @@ class RequestSignupView(FormView):
         password_reset_form = PasswordResetForm(data = form.cleaned_data) # I'm sorry
         password_reset_form.full_clean() # I'm sorry
         if next(password_reset_form.get_users(password_reset_form.cleaned_data["email"]), None) is not None: # Oh my god, I'm so sorry
-            return PasswordResetView(request = self.request, next_page = self.next_page).form_valid(password_reset_form) # Sorry!
+            return PasswordResetView(request = self.request).form_valid(password_reset_form) # Sorry!
         else:
             invite_form = InviteForm(data = form.cleaned_data)
             invite_form.full_clean()

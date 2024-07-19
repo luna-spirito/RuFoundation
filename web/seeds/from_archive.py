@@ -193,6 +193,7 @@ def run(base_path):
                 if not os.path.exists(from_path):
                     logging.warning('Warn: file not found: %s/%s', meta['name'], file['name'])
                     continue
+                print(from_path, to_path)
                 shutil.copyfile(from_path, to_path)
                 new_file.save()
                 new_file.created_at = datetime.datetime.fromtimestamp(file['stamp'], tz=datetime.timezone.utc)
