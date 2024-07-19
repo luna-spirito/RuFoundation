@@ -100,7 +100,7 @@ DATABASES = {
         'USER': os.environ.get('DB_USERNAME', 'scpwiki'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '26257'),
-        'PASSWORD': os.environ.get("PASSWORD")
+        'PASSWORD': os.environ.get("PASSWORD") # TODO: rename, but I'm too tired
         # 'OPTIONS': {
         #     'sslmode': 'verify-full',
         #     'sslrootcert': os.environ.get('DB_ROOT_CERT'),

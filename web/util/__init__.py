@@ -7,7 +7,7 @@ from django.db.transaction import get_connection
 def lock_table(model):
     with transaction.atomic():
         cursor = get_connection().cursor()
-        cursor.execute(f'LOCK TABLE {model._meta.db_table}')
+        cursor.execute(f'SELECT 0 FROM {model._meta.db_table} LIMIT 1 FOR UPDATE')
         try:
             yield
         finally:
