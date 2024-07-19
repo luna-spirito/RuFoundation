@@ -100,12 +100,13 @@ DATABASES = {
         'USER': os.environ.get('DB_USERNAME', 'scpwiki'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '26257'),
-        'OPTIONS': {
-            'sslmode': 'verify-full',
-            'sslrootcert': os.environ.get('DB_ROOT_CERT'),
-            'sslcert':     os.environ.get('DB_CERT'),
-            'sslkey':      os.environ.get('DB_KEY')
-        }
+        'PASSWORD': os.environ.get("PASSWORD")
+        # 'OPTIONS': {
+        #     'sslmode': 'verify-full',
+        #     'sslrootcert': os.environ.get('DB_ROOT_CERT'),
+        #     'sslcert':     os.environ.get('DB_CERT'),
+        #     'sslkey':      os.environ.get('DB_KEY')
+        # }
     }
 }
 
