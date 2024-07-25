@@ -151,9 +151,9 @@ def run(base_path):
     from_files = '%s/files' % base_path
     to_files = str(Path(settings.MEDIA_ROOT) / site.slug)
 
-    if os.path.exists(to_files):
-        logging.info('Removing old files...')
-        shutil.rmtree(to_files, ignore_errors=False)
+    # if os.path.exists(to_files):
+    #     logging.info('Removing old files...')
+    #     shutil.rmtree(to_files, ignore_errors=False)
 
     def file_worker_thread(pages):
         nonlocal total_cnt
@@ -193,7 +193,6 @@ def run(base_path):
                 if not os.path.exists(from_path):
                     logging.warning('Warn: file not found: %s/%s', meta['name'], file['name'])
                     continue
-                print(from_path, to_path)
                 shutil.copyfile(from_path, to_path)
                 new_file.save()
                 new_file.created_at = datetime.datetime.fromtimestamp(file['stamp'], tz=datetime.timezone.utc)

@@ -2,7 +2,7 @@ from django.conf import settings
 import auto_prefetch
 from django.db import models
 from django.db.models import Func, Value
-from django.db.models.lookups import Exact
+from django.db.models.lookups import LessThanOrEqual
 
 from .articles import Article
 from .sites import SiteLimitedModel
@@ -50,7 +50,7 @@ class ForumThread(SiteLimitedModel):
             # requires postgres >9.2
             models.CheckConstraint(
                 name='%(app_label)s_%(class)s_category_or_article',
-                check=Exact(
+                check=LessThanOrEqual(
                     lhs=Func('article_id', 'category_id', function='num_nonnulls', output_field=models.IntegerField()),
                     rhs=Value(1),
                 ),
