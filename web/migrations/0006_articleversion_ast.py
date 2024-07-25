@@ -13,6 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='articleversion',
             name='ast',
-            field=models.TextField(blank=True, null=True, verbose_name='AST-дерево статьи'),
+            field=models.JSONField(blank=True, null=True, verbose_name='AST-дерево статьи'),
+            # field=models.TextField(blank=True, null=True, verbose_name='AST-дерево статьи'),
         ),
     ]

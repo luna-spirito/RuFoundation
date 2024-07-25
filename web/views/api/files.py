@@ -31,7 +31,7 @@ class GetOrUploadView(FileView):
         output = []
         current_files_size, absolute_files_size = articles.get_file_space_usage()
         for file in files:
-            output.append({'id': file.id, 'name': file.name, 'size': file.size, 'createdAt': file.created_at, 'author': render_user_to_json(file.author), 'mimeType': file.mime_type})
+            output.append({'id': str(file.id), 'name': file.name, 'size': file.size, 'createdAt': file.created_at, 'author': render_user_to_json(file.author), 'mimeType': file.mime_type})
         data = {
             'pageId': article.full_name,
             'files': output,

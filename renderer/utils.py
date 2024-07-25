@@ -85,7 +85,7 @@ def render_user_to_json(user: User, avatar=True):
         displayname = 'wd:'+user.wikidot_username
     staff = user.is_staff
     admin = user.is_superuser
-    return {'type': user_type, 'id': user.id, 'avatar': user.get_avatar(), 'name': displayname, 'username': user.username, 'showAvatar': avatar, 'staff': staff, 'admin': admin}
+    return {'type': user_type, 'id': str(user.id), 'avatar': user.get_avatar(), 'name': displayname, 'username': user.username, 'showAvatar': avatar, 'staff': staff, 'admin': admin}
 
 
 def filter_url(url):

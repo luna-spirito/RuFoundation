@@ -10,9 +10,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='articleversion',
-            name='ast',
-            field=models.JSONField(blank=True, null=True, verbose_name='AST-дерево статьи'),
-        ),
+        # migrations.AlterField(
+        #     model_name='articleversion',
+        #     name='ast',
+        #     field=models.JSONField(blank=True, null=True, verbose_name='AST-дерево статьи'),
+        # ),
     ]
