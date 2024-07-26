@@ -34,7 +34,7 @@ def get_post_info(context, thread, posts, show_replies=True):
     for post in posts:
         replies = ForumPost.objects.filter(reply_to=post).order_by('created_at') if show_replies else []
         render_post = {
-            'id': post.id,
+            'id': str(post.id),
             'name': post.name,
             'author': render_user_to_html(post.author),
             'created_at': render_date(post.created_at),
@@ -43,9 +43,9 @@ def get_post_info(context, thread, posts, show_replies=True):
             'replies': get_post_info(context, thread, replies, show_replies),
             'rendered_replies': None,
             'options_config': json.dumps({
-                'threadId': thread.id,
+                'threadId': str(thread.id),
                 'threadName': thread.name if thread.category_id else thread.article.display_name,
-                'postId': post.id,
+                'postId': str(post.id),
                 'postName': post.name,
                 'hasRevisions': post.created_at != post.updated_at,
                 'lastRevisionDate': post.updated_at.isoformat(),
@@ -180,7 +180,7 @@ def render(context: RenderContext, params):
     context.path_params['p'] = str(page)
 
     new_post_config = {
-        'threadId': thread.id,
+        'threadId': str(thread.id),
         'threadName': name,
         'user': render_user_to_json(context.user),
     }
@@ -203,7 +203,7 @@ def render(context: RenderContext, params):
             categories += cs
 
     thread_options_config = {
-        'threadId': thread.id,
+        'threadId': str(thread.id),
         'threadName': name,
         'threadDescription': thread.description,
         'canEdit': thread.article_id is None and permissions.check(context.user, 'edit', thread),
@@ -213,7 +213,7 @@ def render(context: RenderContext, params):
         'isLocked': thread.is_locked,
         'isPinned': thread.is_pinned,
         'moveTo': categories,
-        'categoryId': thread.category_id,
+        'categoryId': str(thread.category_id),
     }
 
     return render_template_from_string(
@@ -291,7 +291,7 @@ def allow_api():
 def api_for_article(context, _params):
     if not context.article:
         raise ModuleError('Страница не указана')
-    return {"threadId": articles.get_comment_info(context.article)[0]}
+    return {"threadId": str(articles.get_comment_info(context.article)[0])}
 
 
 def api_update(context, params):
@@ -350,10 +350,10 @@ def api_update(context, params):
     thread.save()
 
     return {
-        'threadId': thread.id,
+        'threadId': str(thread.id),
         'name': thread.name,
         'description': thread.description,
         'isLocked': thread.is_locked,
         'isPinned': thread.is_pinned,
-        'categoryId': thread.category_id
+        'categoryId': str(thread.category_id)
     }

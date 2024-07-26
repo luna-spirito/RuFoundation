@@ -37,7 +37,7 @@ def render(context: RenderContext, params):
     canonical_url = '/forum/c-%d/%s' % (category.id, articles.normalize_article_name(category.name))
 
     editor_config = {
-        'categoryId': category.id,
+        'categoryId': str(category.id),
         'user': render_user_to_json(context.user),
         'cancelUrl': canonical_url
     }
