@@ -85,6 +85,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
                 redirect_to = None
                 title = ''
                 status = 403
+                default_theme = True
             else:
                 template_source = '%%content%%'
 
@@ -94,6 +95,12 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
                         template_source = articles.get_latest_source(template)
 
                 source = page_to_listpages_vars(article, template_source, index=1, total=1)
+
+                # Keep it simple, stupid
+                # Less stupid approach is to modify? ftml to support the "configuration" stage.
+                # But that's not *my* work. My work is Dentrado.
+                default_theme = not source.lstrip().startswith("[[module NoDefaultTheme]]")
+                
                 source = apply_template(source, lambda param: self.get_this_page_params(path_params, param))
                 context = RenderContext(article, article, path_params, self.request.user)
                 content, excerpt, image = single_pass_render_with_excerpt(source, context)
@@ -111,7 +118,8 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             redirect_to = None
             title = ''
             status = 404
-        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at
+            default_theme = True
+        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme
 
     def get_context_data(self, **kwargs):
         path = kwargs["path"]
@@ -159,7 +167,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
         nav_top = self._render_nav("nav:top", article, path_params)
         nav_side = self._render_nav("nav:side", article, path_params)
 
-        content, status, redirect_to, excerpt, image, title, rev_number, updated_at = self.render(article_name, article, path_params)
+        content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme = self.render(article_name, article, path_params)
 
         context = super(ArticleView, self).get_context_data(**kwargs)
 
@@ -202,6 +210,8 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             'og_description': excerpt,
             'og_image': image,
             'og_url': canonical_url,
+
+            'default_theme': default_theme,
 
             'nav_top': nav_top,
             'nav_side': nav_side,

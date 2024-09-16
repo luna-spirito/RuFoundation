@@ -25,7 +25,9 @@
     <link rel="stylesheet" type="text/css" href="{% md5url "fontawesome/css/all.css" %}">
 
     <link rel="stylesheet" type="text/css" href="{% md5url "wikidot-base.css" %}">
-    <link rel="stylesheet" type="text/css" href="/local--files/main/theme.css">
+    {% if default_theme %}
+        <link rel="stylesheet" type="text/css" href="/local--files/main/theme.css">
+    {% endif %}
 
     <script src="{% md5url "app.js" %}" type="text/javascript"></script>
     <link rel="stylesheet" type="text/css" href="{% md5url "app.css" %}">
