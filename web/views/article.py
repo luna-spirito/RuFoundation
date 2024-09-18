@@ -96,17 +96,13 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
 
                 source = page_to_listpages_vars(article, template_source, index=1, total=1)
 
-                # Keep it simple, stupid
-                # Less stupid approach is to modify? ftml to support the "configuration" stage.
-                # But that's not *my* work. My work is Dentrado.
-                default_theme = not source.lstrip().startswith("[[module NoDefaultTheme]]")
-                
                 source = apply_template(source, lambda param: self.get_this_page_params(path_params, param))
                 context = RenderContext(article, article, path_params, self.request.user)
                 content, excerpt, image = single_pass_render_with_excerpt(source, context)
                 redirect_to = context.redirect_to
                 title = context.title
                 status = context.status
+                default_theme = context.default_theme
 
                 rev_number = articles.get_latest_log_entry(article).rev_number
                 updated_at = article.updated_at

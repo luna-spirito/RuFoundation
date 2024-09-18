@@ -1,4 +1,3 @@
 def render(context, params):
-    print(context)
-    print(params)
+    context.default_theme = False
     return ""
