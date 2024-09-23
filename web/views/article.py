@@ -1,5 +1,7 @@
 import datetime
 
+from django.conf import settings
+
 from django.views.generic.base import TemplateResponseMixin, ContextMixin, View
 from django.template.loader import render_to_string
 from django.http import HttpResponseRedirect
@@ -225,6 +227,11 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             'status': status,
             'redirect_to': redirect_to,
         })
+
+        if settings.GOOGLE_TAG_ID:
+            context.update({
+                'google_tag_id': settings.GOOGLE_TAG_ID
+            })
 
         return context
 
