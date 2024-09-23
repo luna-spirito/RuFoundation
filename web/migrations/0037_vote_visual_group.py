@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('system', '0016_visualusergroup_index'),
-        ('web', '0036_externallink_web_externa_link_fr_92155a_idx_and_more'),
+        ('web', '0037_remove_forumthread_web_forumthread_category_or_article_and_more'),
     ]
 
     operations = [
