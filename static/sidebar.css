@@ -227,7 +227,7 @@
             background-position 300ms cubic-bezier(0.4, 0.0, 0.2, 1),
             opacity 300ms cubic-bezier(0.4, 0.0, 0.2, 1);
         left: 1rem;
-        background: url("https://files.backroomswiki.ru/local--files/nav:side/sidebar-tab.svg");
+        background: url("/local--files/nav:side/sidebar-tab.svg");
         background-repeat: no-repeat;
         background-position: center left 1rem;
         background-attachment: fixed;
