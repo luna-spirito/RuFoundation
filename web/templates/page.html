@@ -11,12 +11,8 @@
     <meta property="og:description" content="{{ og_description }}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="{{ og_url }}">
-    {% if og_image %}
-        <meta property="og:image" content="{{ og_image }}">
-        <meta name="twitter:card" content="summary_large_image">
-    {% else %}
-        <meta name="twitter:card" content="summary">
-    {% endif %}
+    <meta property="og:image" content="{{ og_image|default:'/local--files/system:themes/logo.svg' }}">
+    <meta name="twitter:card" content="summary_large_image">
 
     <title>{{ site_title }}</title>
 
