@@ -26,6 +26,9 @@
     {% endif %}
 
     <script src="{% md5url "app.js" %}" type="text/javascript"></script>
+    {% if js_script %}
+        <script src="/local--files/system:themes/scripts.js" type="text/javascript"></script>
+    {% endif %}
     <link rel="stylesheet" type="text/css" href="{% md5url "app.css" %}">
 
     {% if google_tag_id %}
