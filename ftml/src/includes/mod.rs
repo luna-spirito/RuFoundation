@@ -55,8 +55,22 @@ lazy_static! {
             .build()
             .unwrap()
     };
+    static ref NO_INCLUDE_REGEX: Regex = {
+        RegexBuilder::new(r"^\[\[\s*noinclude\s*\]\]\s*\n(.*?)\n\[\[/\s*noinclude\s*\]\]\s*$")
+            .case_insensitive(true)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap()
+    };
     static ref VARIABLE_REGEX: Regex =
         Regex::new(r"\{\$(?P<name>[a-zA-Z0-9_\-]+)\}").unwrap();
+}
+
+pub fn remove_noincludes<'t>(input: &'t str) -> String {
+    let no_include_regex = NO_INCLUDE_REGEX.deref();
+    let input_stripped_of_no_include = no_include_regex.replace_all(input, "${1}").to_owned();
+    String::from(input_stripped_of_no_include)
 }
 
 pub fn include<'t, I, E, F>(
@@ -88,6 +102,8 @@ where
         INCLUDE_REGEX.deref()
     };
 
+    let no_include_regex = NO_INCLUDE_REGEX.deref();
+
     // Get include references
     for mtch in regex.find_iter(input) {
         let start = mtch.start();
@@ -101,7 +117,7 @@ where
         match parse_include_block(&input[start..], start, settings) {
             Ok((include, end)) => {
                 ranges.push(start..end);
-                includes.push(include);
+                includes.push(include.to_owned());
             }
             Err(_) => warn!("Unable to parse include regex match"),
         }
@@ -156,11 +172,13 @@ where
             None => includer.no_such_include(&page_ref)?,
         };
 
+        let replace_with_no_includes = no_include_regex.replace_all(replace_with.as_ref(), "");
+
         // Append page to final list
         pages.push(page_ref);
 
         // Perform the substitution
-        output.replace_range(range, &replace_with);
+        output.replace_range(range, &replace_with_no_includes);
     }
 
     // Since we iterate in reverse order, the pages are reversed.
