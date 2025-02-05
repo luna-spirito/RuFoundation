@@ -15,7 +15,7 @@ class Command(BaseCommand):
         parser.add_argument('-H', '--headline', required=True, help='Headline of the website (e.g.: Secure, Contain, Protect)')
 
     def handle(self, *args, **options):
-        curr_site = Site.objects.get()
+        curr_site = Site.objects.first()
         if curr_site:
             print(f"Can't create multiple sites. You already have \"{curr_site.title}\" on {curr_site.domain}.")
             return
