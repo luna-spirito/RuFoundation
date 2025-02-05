@@ -8,6 +8,7 @@ from django.db.models.functions import Coalesce, Concat, Lower
 
 import renderer
 from renderer import RenderContext
+from system.models import User
 from web.models.sites import get_current_site
 from web.models.articles import *
 from web.models.files import *
@@ -207,6 +208,8 @@ def revert_article_version(full_name_or_article: _FullNameOrArticle, rev_number:
         elif entry.type == ArticleLogEntry.LogEntryType.Wikidot:
             # this is a fake revision type.
             pass
+        elif entry.type == ArticleLogEntry.LogEntryType.VotesDeleted:
+            new_props['votes'] = entry.meta
         elif entry.type == ArticleLogEntry.LogEntryType.Revert:
             if 'source' in entry.meta:
                 new_props['source'] = get_previous_version(entry.meta['source']['version_id']).source
@@ -250,6 +253,8 @@ def revert_article_version(full_name_or_article: _FullNameOrArticle, rev_number:
                     new_props['files_deleted'][f['id']] = False
                 for f in entry.meta['files']['renamed']:
                     new_props['files_renamed'][f['id']] = f['prev_name']
+            if 'votes' in entry.meta:
+                new_props['votes'] = entry.meta['votes']
 
     subtypes = []
 
@@ -310,17 +315,24 @@ def revert_article_version(full_name_or_article: _FullNameOrArticle, rev_number:
     tags_added_meta = []
     tags_removed_meta = []
 
-    tags = list(get_tags(article))
+    tags = [x.id for x in get_tags_internal(article)]
     for tag in new_props.get('removed_tags', []):
+        # safety: some outdated revisions have string tags here
+        if not isinstance(tag, int):
+            continue
         try:
             tags.remove(tag)
             tags_removed_meta.append(tag)
         except ValueError:
             pass
     for tag in new_props.get('added_tags', []):
+        # safety: some outdated revisions have string tags here
+        if not isinstance(tag, int):
+            continue
         tags.append(tag)
         tags_added_meta.append(tag)
-    set_tags(article, tags, user, False)
+    new_tags = list(Tag.objects.filter(id__in=tags))
+    set_tags_internal(article, new_tags, user, False)
 
     if tags_added_meta or tags_removed_meta:
         subtypes.append(ArticleLogEntry.LogEntryType.Tags)
@@ -364,6 +376,28 @@ def revert_article_version(full_name_or_article: _FullNameOrArticle, rev_number:
         }
         article.parent = parent
         article.save()
+
+    if 'votes' in new_props:
+        subtypes.append(ArticleLogEntry.LogEntryType.VotesDeleted)
+        votes_meta = _get_article_votes_meta(article)
+        meta['votes'] = votes_meta
+        with transaction.atomic():
+            Vote.objects.filter(article=article).delete()
+            for vote in new_props['votes']['votes']:
+                try:
+                    vote_visual_group = VisualUserGroup.objects.get(id=vote['visual_group_id'])
+                except VisualUserGroup.DoesNotExist:
+                    vote_visual_group = None
+                try:
+                    vote_user = User.objects.get(id=vote['user_id'])
+                except User.DoesNotExist:
+                    # missing user id means we skip this vote and can't restore it.
+                    continue
+                vote_date = datetime.datetime.fromisoformat(vote['date']) if vote['date'] else None
+                new_vote = Vote(article=article, user=vote_user, date=vote_date, rate=vote['vote'], visual_group=vote_visual_group)
+                new_vote.save()
+                new_vote.date = vote_date
+                new_vote.save()
 
     meta['rev_number'] = rev_number
     meta['subtypes'] = subtypes
@@ -457,6 +491,52 @@ def update_full_name(full_name_or_article: _FullNameOrArticle, new_full_name: st
             user=user,
             type=ArticleLogEntry.LogEntryType.Name,
             meta={'name': new_full_name, 'prev_name': prev_full_name}
+        )
+        add_log_entry(article, log)
+
+
+def _get_article_votes_meta(full_name_or_article: _FullNameOrArticle):
+    article = get_article(full_name_or_article)
+
+    # for revision logs, we store:
+    # - rating mode
+    # - rating
+    # - vote count
+    # - popularity
+    # - individual votes from each user, expressed as internal DB values
+    #   (user id + username + vote value)
+
+    rating, rating_votes, popularity, rating_mode = get_rating(article)
+    votes = list(Vote.objects.filter(article=article))
+    votes_meta = {
+        'rating_mode': str(rating_mode),
+        'rating': rating,
+        'votes_count': rating_votes,
+        'popularity': popularity,
+        'votes': []
+    }
+    for vote in votes:
+        votes_meta['votes'].append({
+            'user_id': vote.user_id,
+            'vote': vote.rate,
+            'visual_group_id': vote.visual_group_id,
+            'date': vote.date.isoformat() if vote.date else None
+        })
+    return votes_meta
+
+def delete_article_votes(full_name_or_article: _FullNameOrArticle, user: Optional[_UserType] = None, log: bool = True):
+    article = get_article(full_name_or_article)
+
+    # fetch existing votes
+    votes_meta = _get_article_votes_meta(article)
+    Vote.objects.filter(article=article).delete()
+
+    if log:
+        log = ArticleLogEntry(
+            article=article,
+            user=user,
+            type=ArticleLogEntry.LogEntryType.VotesDeleted,
+            meta=votes_meta
         )
         add_log_entry(article, log)
 
@@ -612,11 +692,6 @@ def get_tag(full_name_or_tag_id: _FullNameOrTag, create: bool = False) -> Option
             return Tag.objects.get(category=category, name=name)
         except (Tag.DoesNotExist, TagsCategory.DoesNotExist):
             return None
-    if type(full_name_or_tag_id) == int:
-        try:
-            return Tag.objects.get(id=full_name_or_tag_id)
-        except Tag.DoesNotExist:
-            return None
     if not isinstance(full_name_or_tag_id, Tag):
         raise ValueError('Expected str or Tag')
     return full_name_or_tag_id
@@ -624,9 +699,13 @@ def get_tag(full_name_or_tag_id: _FullNameOrTag, create: bool = False) -> Option
 
 # Get tags from article
 def get_tags(full_name_or_article: _FullNameOrArticle) -> Sequence[str]:
+    return list(sorted([x.full_name.lower() for x in get_tags_internal(full_name_or_article)]))
+
+
+def get_tags_internal(full_name_or_article: _FullNameOrArticle) -> Sequence[Tag]:
     article = get_article(full_name_or_article)
     if article:
-        return list(sorted([x.full_name.lower() for x in article.tags.prefetch_related("category")]))
+        return article.tags.prefetch_related("category")
     return []
 
 
@@ -639,12 +718,18 @@ def get_tags_categories(full_name_or_article: _FullNameOrArticle) -> Dict[TagsCa
 
 
 # Set tags for article
-def set_tags(full_name_or_article: _FullNameOrArticle, tags: Sequence[Union[str, int]], user: Optional[_UserType] = None, log: bool = True):
+def set_tags(full_name_or_article: _FullNameOrArticle, tags: Sequence[Union[str]], user: Optional[_UserType] = None, log: bool = True):
     article = get_article(full_name_or_article)
-    article_tags = article.tags.all()
 
     allow_creating = article.get_settings().creating_tags_allowed
-    tags = list(filter(lambda x: x is not None, [get_tag(x, create=allow_creating) for x in tags if isinstance(x, int) or is_tag_name_allowed(x)]))
+    tags = list(filter(lambda x: x is not None, [get_tag(x, create=allow_creating) for x in tags if is_tag_name_allowed(x)]))
+
+    return set_tags_internal(article, tags, user=user, log=log)
+
+
+def set_tags_internal(full_name_or_article: _FullNameOrArticle, tags: Sequence[Tag], user: Optional[_UserType] = None, log: bool = True):
+    article = get_article(full_name_or_article)
+    article_tags = article.tags.all()
 
     removed_tags = []
     added_tags = []

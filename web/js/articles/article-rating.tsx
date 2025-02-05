@@ -7,11 +7,13 @@ import {fetchPageVotes, ModuleRateVote, RatingMode} from "../api/rate";
 import UserView from "../util/user-view";
 import {sprintf} from 'sprintf-js'
 import formatDate from '../util/date-format'
+import {deleteArticleVotes} from '../api/articles'
 
 
 interface Props {
     pageId: string
     rating: number
+    canEdit: boolean
     onClose: () => void
 }
 
@@ -23,6 +25,7 @@ interface State {
     votes?: Array<ModuleRateVote>
     popularity?: number
     error?: string
+    deleting?: boolean
 }
 
 
@@ -52,6 +55,9 @@ const Styles = styled.div<{loading?: boolean}>`
   font-style: italic;
   opacity: 0.5;
 }
+.w-rating-clear-rating-button {
+  width: 100%;
+}
 `;
 
 
@@ -68,7 +74,12 @@ class ArticleRating extends Component<Props, State> {
     }
 
     componentDidMount() {
+        window.addEventListener('message', this.onRatingUpdated);
         this.loadRating();
+    }
+
+    componentWillUnmount() {
+        window.removeEventListener('message', this.onRatingUpdated);
     }
 
     async loadRating() {
@@ -80,6 +91,32 @@ class ArticleRating extends Component<Props, State> {
         } catch (e) {
             this.setState({ loading: false, error: e.error || 'Ошибка связи с сервером' });
         }
+    }
+
+    onRatingUpdated = (message: MessageEvent) => {
+        if (message.data?.type !== 'rate_updated') {
+            return;
+        }
+        this.loadRating();
+    }
+
+    onClearRating = async () => {
+        const { pageId } = this.props;
+        this.setState({ loading: true, error: null, deleting: false });
+        try {
+            const rating = await deleteArticleVotes(pageId)
+            this.setState({ loading: false, error: null, votes: rating.votes, rating: rating.rating, popularity: rating.popularity, mode: rating.mode });
+        } catch (e) {
+            this.setState({ loading: false, error: e.error || 'Ошибка связи с сервером' });
+        }
+    }
+
+    onAskClearRating = () => {
+        this.setState({ deleting: true })
+    }
+
+    onCancelClearRating = () => {
+        this.setState({ deleting: false })
     }
 
     onClose = (e) => {
@@ -209,15 +246,34 @@ class ArticleRating extends Component<Props, State> {
     }
 
     renderRating() {
+        const { canEdit } = this.props;
         const { mode } = this.state;
 
+        let ratingElement: React.ReactNode;
+
         if (mode === 'updown') {
-            return this.renderUpDownRating();
+            ratingElement = this.renderUpDownRating();
         } else if (mode === 'stars') {
-            return this.renderStarsRating();
+            ratingElement = this.renderStarsRating();
         } else {
             return null;
         }
+
+        if (!ratingElement) {
+            return null;
+        }
+
+        return (
+            <div>
+                {ratingElement}
+                {canEdit && (
+                    <>
+                        <br/>
+                        <button className="w-rating-clear-rating-button" onClick={this.onAskClearRating}>Сбросить рейтинг</button>
+                    </>
+                )}
+            </div>
+        )
     }
 
     renderRatingDistribution() {
@@ -308,13 +364,19 @@ class ArticleRating extends Component<Props, State> {
     }
 
     render() {
-        const { error, loading, votes } = this.state;
+        const { error, loading, votes, deleting } = this.state;
         const groupedVotes = this.sortVotes(votes);
         return (
             <Styles>
                 { error && (
                     <WikidotModal buttons={[{title: 'Закрыть', onClick: this.onCloseError}]} isError>
                         <p><strong>Ошибка:</strong> {error}</p>
+                    </WikidotModal>
+                ) }
+                { deleting && (
+                    <WikidotModal buttons={[{title: 'Отмена', onClick: this.onCancelClearRating}, {title: 'Да, сбросить', onClick: this.onClearRating}]}>
+                        <h1>Сбросить рейтинг страницы?</h1>
+                        <p>Обратите внимание, что данную операцию можно будет откатить через историю правок.</p>
                     </WikidotModal>
                 ) }
                 <a className="action-area-close btn btn-danger" href="#" onClick={this.onClose}>Закрыть</a>
