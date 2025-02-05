@@ -7,7 +7,7 @@ const watch = args.includes('--watch');
 async function build() {
     const baseConfigJS = {
         entryPoints: ['index.tsx'],
-        outfile: '../../static/app.js',
+        outfile: 'out/app.js',
         bundle: true,
         minify: true,
         sourcemap: true
@@ -15,7 +15,7 @@ async function build() {
 
     const baseConfigCSS = {
         entryPoints: ['index.scss'],
-        outfile: '../../static/app.css',
+        outfile: 'out/app.css',
         bundle: true,
         minify: true,
         sourcemap: true,

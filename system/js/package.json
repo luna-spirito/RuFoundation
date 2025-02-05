@@ -24,7 +24,7 @@
     "uuid": "^8.3.2"
   },
   "scripts": {
-    "build": "npx ts-node build.ts",
-    "watch": "npx ts-node build.ts --watch"
+    "build": "ts-node build.ts",
+    "watch": "ts-node build.ts --watch"
   }
 }
