@@ -1,12 +1,16 @@
 {
-  description = "RuFoundation/SCpWiki";
+  description = "RuFoundation/scpwiki/24.11";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
+    fenix = {
+      url = "github:nix-community/fenix/monthly";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, fenix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -122,8 +126,22 @@
             cp -r . $out
           '';
         };
+        devShell = with-cockroach: with pkgs; mkShell {
+          buildInputs = [
+            scpwiki-python
+            yarn
+            nodePackages_latest.ts-node
+            fenix.packages.${system}.minimal.toolchain
+            (writeScriptBin "cockroach-insecure-start" ./cockroach-insecure-start.sh)
+            (writeScriptBin "cockroach-insecure-reset" ./cockroach-insecure-reset.sh)
+          ] ++ lib.optional with-cockroach [ cockroachdb ];
+        };
       in
         {
+          devShells = {
+            with-cockroach = devShell true;
+            default = devShell false;
+          };
           packages = { inherit ftml scpwiki-python scpwiki-nofiles; };
         }
     );

@@ -13,3 +13,6 @@ archive
 venv
 .DS_Store
 result
+cockroach-data
+/web/js/out/
+/system/js/out/
