@@ -1,5 +1,5 @@
 {
-  description = "RuFoundation/scpwiki/24.11";
+  description = "RuFoundation/scpwiki";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs";
@@ -26,7 +26,7 @@
           version = "1.0";
           src = ftml-source;
           nativeBuildInputs = [ pkgs.python311 ];
-          cargoHash = "sha256-1mbD7yCRhmvO+B02pPK3Y+hYB5tQNfLeywycDeFOCMc=";
+          cargoHash = "sha256-f1Gzf/+3r8bKGBpODUnAygUIH6P+bGuoIwQlsjtFGJs=";
         };
         mk-js = n: hash: pkgs.stdenv.mkDerivation rec {
           name = n;
@@ -40,7 +40,9 @@
             yarnBuildHook
             nodePackages_latest.ts-node
           ];
-
+          patchPhase = ''
+            substituteInPlace build.ts --replace-fail "../../static" "out"
+          '';
           installPhase = ''
             mv out $out
           '';
