@@ -90,6 +90,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
                 redirect_to = None
                 title = ''
                 status = 403
+                default_theme = True
             else:
                 template_source = '%%content%%'
 
@@ -105,6 +106,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
                 redirect_to = context.redirect_to
                 title = context.title
                 status = context.status
+                default_theme = context.default_theme
 
                 rev_number = articles.get_latest_log_entry(article).rev_number
                 updated_at = article.updated_at
@@ -116,7 +118,8 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             redirect_to = None
             title = ''
             status = 404
-        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at
+            default_theme = True
+        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme
 
     def get_context_data(self, **kwargs):
         path = kwargs["path"]
@@ -167,7 +170,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
         site = get_current_site()
         canonical_url = '//%s/%s%s' % (site.domain, article.full_name if article else article_name, encoded_params)
 
-        content, status, redirect_to, excerpt, image, title, rev_number, updated_at = self.render(article_name, article, path_params, canonical_url)
+        content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme = self.render(article_name, article, path_params, canonical_url)
 
         context = super(ArticleView, self).get_context_data(**kwargs)
 
@@ -215,6 +218,8 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             'og_description': excerpt,
             'og_image': image,
             'og_url': canonical_url,
+
+            'default_theme': default_theme,
 
             'nav_top': nav_top,
             'nav_side': nav_side,

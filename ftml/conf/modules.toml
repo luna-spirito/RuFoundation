@@ -26,3 +26,6 @@ showRoot = { type = "bool", default = false }
 
 [Rate]
 body = "none"
+
+[NoDefaultTheme]
+body = "none"
