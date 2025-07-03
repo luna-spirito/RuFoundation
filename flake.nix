@@ -26,14 +26,14 @@
           version = "1.0";
           src = ftml-source;
           nativeBuildInputs = [ pkgs.python313 ];
-          cargoHash = "sha256-f1Gzf/+3r8bKGBpODUnAygUIH6P+bGuoIwQlsjtFGJs=";
+          cargoHash = "sha256-3PChiOzxtbVdyrpjzw8Mloa3RLoFA8DqT2C+j2Uy4Cc=";
         };
-        mk-js = n: hash: pkgs.stdenv.mkDerivation rec {
-          name = n;
-          src = ./${n}/js;
+        web-js = pkgs.stdenv.mkDerivation rec {
+          name = "web";
+          src = ./web/js;
           yarnOfflineCache = pkgs.fetchYarnDeps {
             yarnLock = src + "/yarn.lock";
-            inherit hash;
+            hash = "sha256-fDW4tNEY5LYjII5jfU01/B90VacyK2gHrPbOlI5MzVg=";
           };
           nativeBuildInputs = with pkgs; [
             yarnConfigHook
@@ -47,8 +47,6 @@
             mv out $out
           '';
         };
-        web-js = mk-js "web" "sha256-1fkXoO5z2stM8q5QWEnqKgE2tqail3NFgPM6vE854EY=";
-        system-js = mk-js "system" "sha256-1fkXoO5z2stM8q5QWEnqKgE2tqail3NFgPM6vE854EY=";
         scpwiki-python = pkgs.python313.withPackages (ps: with ps;
           let
             django-jazzmin = buildPythonPackage rec {
@@ -109,7 +107,6 @@
           src = ./.;
           buildPhase = ''
             cp -r ${web-js}/* ./static/
-            cp -r ${system-js}/* ./static/
             cp -r ${ftml}/lib/libftml.so ./ftml/ftml.so
             rm -rf files
             ${scpwiki-python}/bin/python3 manage.py collectstatic
@@ -129,7 +126,7 @@
               fenix.packages.${system}.minimal.toolchain
             ];
           };
-          packages = { inherit ftml scpwiki-python scpwiki-nofiles; };
+          packages = { inherit ftml web-js scpwiki-python scpwiki-nofiles; };
         }
     );
 }
