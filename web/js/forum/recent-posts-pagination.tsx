@@ -1,5 +1,5 @@
-import * as React from 'react'
-import * as ReactDOM from 'react-dom'
+import React from 'react'
+import { renderTo, unmountFromRoot } from '~util/react-render-into'
 import { callModule, ModuleRenderResponse } from '../api/modules'
 import Loader from '../util/loader'
 import { showErrorModal } from '../util/wikidot-modal'
@@ -12,8 +12,8 @@ export function makeRecentPosts(node: HTMLElement) {
   ;(node as any)._recentposts = true
   // end hack
 
-  const rpBasePathParams = JSON.parse(node.dataset.recentPostsPathParams)
-  const rpBaseParams = JSON.parse(node.dataset.recentPostsParams)
+  const rpBasePathParams = JSON.parse(node.dataset.recentPostsPathParams!)
+  const rpBaseParams = JSON.parse(node.dataset.recentPostsParams!)
 
   // display loader when needed.
   const loaderInto = document.createElement('div')
@@ -32,14 +32,14 @@ export function makeRecentPosts(node: HTMLElement) {
   node.appendChild(loaderInto)
 
   //
-  const switchPage = async (e: MouseEvent, page: string, addParams: {}) => {
+  const switchPage = async (e: MouseEvent | null, page: string, addParams: {}) => {
     if (e) {
       e.preventDefault()
       e.stopPropagation()
     }
     loaderInto.style.display = 'flex'
     // because our loader is React, we should display it like this.
-    ReactDOM.render(<Loader size={80} borderSize={8} />, loaderInto)
+    renderTo(loaderInto, <Loader size={80} borderSize={8} />)
     //
     try {
       const { result: rendered } = await callModule<ModuleRenderResponse>({
@@ -48,15 +48,17 @@ export function makeRecentPosts(node: HTMLElement) {
         pathParams: Object.assign(rpBasePathParams, { p: page }, addParams),
         params: rpBaseParams,
       })
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       const tmp = document.createElement('div')
       tmp.innerHTML = rendered
       const newNode = tmp.firstElementChild
-      node.parentNode.replaceChild(newNode, node)
+      if (newNode && node.parentNode) {
+        node.parentNode.replaceChild(newNode, node)
+      }
     } catch (e) {
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       showErrorModal(e.error || 'Ошибка связи с сервером')
@@ -67,7 +69,7 @@ export function makeRecentPosts(node: HTMLElement) {
   const pagers = node.querySelectorAll(':scope > div > .thread-container > .pager')
   pagers.forEach(pager =>
     pager.querySelectorAll('*[data-pagination-target]').forEach((node: HTMLElement) => {
-      node.addEventListener('click', e => switchPage(e, node.dataset.paginationTarget, {}))
+      node.addEventListener('click', e => switchPage(e, node.dataset.paginationTarget!, {}))
     }),
   )
 

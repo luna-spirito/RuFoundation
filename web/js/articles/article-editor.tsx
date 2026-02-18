@@ -1,5 +1,7 @@
+import { Editor } from '@monaco-editor/react'
+import { editor } from 'monaco-editor'
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { createArticle, fetchArticle, updateArticle } from '../api/articles'
 import { makePreview } from '../api/preview'
@@ -12,27 +14,14 @@ interface Props {
   pageId: string
   pathParams?: { [key: string]: string }
   isNew?: boolean
+  useAdvancedEditor?: boolean
   onClose?: () => void
   previewTitleElement?: HTMLElement | (() => HTMLElement)
   previewBodyElement?: HTMLElement | (() => HTMLElement)
+  previewStyleElement?: HTMLElement | (() => HTMLElement)
 }
 
-interface State {
-  title: string
-  source: string
-  comment: string
-  loading: boolean
-  saving: boolean
-  savingSuccess?: boolean
-  error?: string
-  fatalError?: boolean
-  saved?: boolean
-  previewOriginalTitle?: string
-  previewOriginalTitleDisplay?: string
-  previewOriginalBody?: string
-}
-
-function guessTitle(pageId) {
+function guessTitle(pageId: string) {
   const pageIdSplit = pageId.split(':', 2)
   if (pageIdSplit.length === 2) pageId = pageIdSplit[1]
   else pageId = pageIdSplit[0]
@@ -59,7 +48,10 @@ function guessTitle(pageId) {
   return result
 }
 
-function getElement(e: HTMLElement | (() => HTMLElement)) {
+function getElement(e?: HTMLElement | (() => HTMLElement | undefined)) {
+  if (!e) {
+    return undefined
+  }
   if (typeof e === 'function') {
     return e()
   }
@@ -91,25 +83,58 @@ const Styles = styled.div`
   }
 `
 
-const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, previewTitleElement, previewBodyElement }) => {
+const StyledEditor = styled(Editor)<{ isFullscreen: boolean }>`
+  border: 1px solid #ccc;
+  ${p =>
+    p.isFullscreen &&
+    `
+    width: 100vw;
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    `}
+`
+
+const ArticleEditor: React.FC<Props> = ({
+  pageId,
+  pathParams,
+  isNew,
+  useAdvancedEditor,
+  onClose,
+  previewTitleElement,
+  previewBodyElement,
+  previewStyleElement,
+}) => {
   const [title, setTitle] = useState('')
   const [source, setSource] = useState('')
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingSuccess, setSavingSuccess] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState('')
   const [fatalError, setFatalError] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [previewOriginalTitle, setPreviewOriginalTitle] = useState('')
-  const [previewOriginalTitleDisplay, setPreviewOriginalTitleDisplay] = useState('')
-  const [previewOriginalBody, setPreviewOriginalBody] = useState('')
+  const [fullscreenEditor, setFullScreenEditor] = useState(false)
+  const [previewOriginalTitle, setPreviewOriginalTitle] = useState<string>()
+  const [previewOriginalTitleDisplay, setPreviewOriginalTitleDisplay] = useState<string>()
+  const [previewOriginalBody, setPreviewOriginalBody] = useState<string>()
+  const [previewOriginalStyle, setPreviewOriginalStyle] = useState<string>()
+
+  const editorRef = useRef(null)
+  const monacoRef = useRef(null)
+
+  const monacoOptions: editor.IStandaloneEditorConstructionOptions = {
+    wordWrap: 'on',
+    readOnly: loading || saving,
+  }
 
   useEffect(() => {
     setTitle(isNew ? guessTitle(pageId) : '')
     setPreviewOriginalTitle(getElement(previewTitleElement)?.innerText)
     setPreviewOriginalTitleDisplay(getElement(previewTitleElement)?.style?.display)
     setPreviewOriginalBody(getElement(previewBodyElement)?.innerHTML)
+    setPreviewOriginalStyle(getElement(previewStyleElement)?.innerHTML)
 
     window.addEventListener('beforeunload', handleRefresh)
 
@@ -117,8 +142,8 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
       setLoading(true)
       fetchArticle(pageId)
         .then(data => {
-          setSource(data.source)
-          setTitle(data.title)
+          setSource(data.source ?? '')
+          setTitle(data.title ?? '')
         })
         .catch(e => {
           setFatalError(true)
@@ -141,9 +166,30 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
     }
   })
 
+  const onEditorDidMount = useConstCallback((editor, monaco) => {
+    editorRef.current = editor
+    monacoRef.current = monaco
+
+    editor.addAction({
+      id: 'toggle-fullscreen',
+      label: 'Toggle fullscreen',
+
+      keybindings: [monaco.KeyCode.F11],
+
+      precondition: null,
+      keybindingContext: null,
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.5,
+
+      run: () => {
+        setFullScreenEditor(prevFullScreenEditor => !prevFullScreenEditor)
+      },
+    })
+  })
+
   const onSubmit = useConstCallback(() => {
     setSaving(true)
-    setError(undefined)
+    setError('')
     setSavingSuccess(false)
 
     const input = {
@@ -151,7 +197,7 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
       title: title,
       source: source,
       comment: comment,
-      parent: pathParams['parent'],
+      parent: pathParams?.['parent'],
     }
 
     if (isNew) {
@@ -180,7 +226,7 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
           setTimeout(() => {
             setSavingSuccess(false)
             window.scrollTo(window.scrollX, 0)
-            if (pathParams['edit']) {
+            if (pathParams?.['edit']) {
               window.location.href = `/${pageId}`
             } else {
               window.location.reload()
@@ -209,9 +255,19 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
 
     makePreview(data).then(function (resp) {
       showPreviewMessage()
-      getElement(previewTitleElement).innerText = resp.title
-      getElement(previewTitleElement).style.display = ''
-      getElement(previewBodyElement).innerHTML = resp.content
+      const titleEl = getElement(previewTitleElement)
+      if (titleEl) {
+        titleEl.innerText = resp.title
+        titleEl.style.display = ''
+      }
+      const bodyEl = getElement(previewBodyElement)
+      if (bodyEl) {
+        bodyEl.innerHTML = resp.content
+      }
+      const styleEl = getElement(previewStyleElement)
+      if (styleEl) {
+        styleEl.innerHTML = resp.style
+      }
     })
   })
 
@@ -221,33 +277,39 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
       e.stopPropagation()
     }
     removeMessage()
-    if (typeof previewOriginalTitle === 'string') {
-      getElement(previewTitleElement).innerText = previewOriginalTitle
-      getElement(previewTitleElement).style.display = previewOriginalTitleDisplay
+    const titleEl = getElement(previewTitleElement)
+    if (typeof previewOriginalTitle === 'string' && titleEl) {
+      titleEl.innerText = previewOriginalTitle
     }
-    if (typeof previewOriginalBody === 'string') {
-      getElement(previewBodyElement).innerHTML = previewOriginalBody
+    if (typeof previewOriginalTitleDisplay === 'string' && titleEl) {
+      titleEl.style.display = previewOriginalTitleDisplay
+    }
+    const bodyEl = getElement(previewBodyElement)
+    if (typeof previewOriginalBody === 'string' && bodyEl) {
+      bodyEl.innerHTML = previewOriginalBody
+    }
+    const styleEl = getElement(previewStyleElement)
+    if (typeof previewOriginalStyle === 'string' && styleEl) {
+      styleEl.innerHTML = previewOriginalStyle
     }
     if (onClose) onClose()
   })
 
-  const onChange = useConstCallback(e => {
-    setSaved(false)
-    switch (e.target.name) {
-      case 'title':
-        setTitle(e.target.value)
-        break
-      case 'source':
-        setSource(e.target.value)
-        break
-      case 'comment':
-        setComment(e.target.value)
-        break
+  const onInputChange = useConstCallback(e => {
+    const { name, value } = e.target
+    if (name === 'title') {
+      setTitle(value)
+    } else if (name === 'comment') {
+      setComment(value)
     }
   })
 
+  const onSourceChange = useConstCallback((value: string) => {
+    setSource(value || '')
+  })
+
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }
@@ -282,7 +344,7 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
                 <input
                   id="edit-page-title"
                   value={title}
-                  onChange={onChange}
+                  onChange={onInputChange}
                   name="title"
                   type="text"
                   size={35}
@@ -297,21 +359,34 @@ const ArticleEditor: React.FC<Props> = ({ pageId, pathParams, isNew, onClose, pr
         {/* This is not supported right now but we have to add empty div for BHL */}
         <div id="wd-editor-toolbar-panel" className="wd-editor-toolbar-panel" />
         <div className={`editor-area ${loading ? 'loading' : ''}`}>
-          <textarea
-            id="edit-page-textarea"
-            value={source}
-            onChange={onChange}
-            name="source"
-            rows={20}
-            cols={60}
-            style={{ width: '95%' }}
-            disabled={loading || saving}
-          />
+          {!useAdvancedEditor && (
+            <textarea
+              id="edit-page-textarea"
+              value={source}
+              onChange={e => onSourceChange(e.target.value)}
+              name="source"
+              rows={20}
+              cols={60}
+              style={{ width: '95%' }}
+              disabled={loading || saving}
+            />
+          )}
+          {useAdvancedEditor && (
+            <StyledEditor
+              loading="Загрузка, терпите, карлики..."
+              height="350px"
+              value={source}
+              isFullscreen={fullscreenEditor}
+              onChange={onSourceChange}
+              onMount={onEditorDidMount}
+              options={monacoOptions}
+            />
+          )}
           <p>Краткое описание изменений:</p>
           <textarea
             id="edit-page-comments"
             value={comment}
-            onChange={onChange}
+            onChange={onInputChange}
             name="comment"
             rows={3}
             cols={20}

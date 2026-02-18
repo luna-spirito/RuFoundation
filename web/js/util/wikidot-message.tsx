@@ -1,6 +1,6 @@
-import * as React from 'react'
-import * as ReactDOM from 'react-dom'
+import React from 'react'
 import styled from 'styled-components'
+import { renderTo, unmountFromRoot } from '~util/react-render-into'
 import { UserData } from '../api/user'
 import useConstCallback from './const-callback'
 import formatDate from './date-format'
@@ -14,6 +14,7 @@ interface Button {
 interface Props {
   buttons?: Array<Button>
   background?: string
+  children?: React.ReactNode
 }
 
 const Styles = styled.div`
@@ -39,8 +40,8 @@ const WikidotMessage: React.FC<Props> = ({ children, buttons, background }: Prop
     <Styles>
       <div className="w-message" style={{ background: background }}>
         {children}
-        <br />
-        {buttons.map((button, i) => (
+        {buttons && <br />}
+        {buttons?.map((button, i) => (
           <React.Fragment key={i}>
             <a onClick={e => handleCallback(e, button.onClick)}>{button.title}</a>
             {i !== buttons.length - 1 && ' | '}
@@ -52,16 +53,16 @@ const WikidotMessage: React.FC<Props> = ({ children, buttons, background }: Prop
 }
 
 function getMessageContainer() {
-  return document.getElementById('action-area-top')
+  return document.getElementById('action-area-top')!
 }
 
-function addMessage(message: JSX.Element) {
-  ReactDOM.render(message, getMessageContainer())
+function addMessage(message: React.ReactNode) {
+  renderTo(getMessageContainer(), message)
 }
 
 export function removeMessage() {
   const node = getMessageContainer()
-  ReactDOM.unmountComponentAtNode(node)
+  unmountFromRoot(node)
 }
 
 export function showPreviewMessage() {

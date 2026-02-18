@@ -5,19 +5,22 @@ from datetime import datetime, timezone
 
 from renderer.utils import render_user_to_json
 from web.events import EventBase
-from web.controllers import permissions
-from web.models.forum import ForumPost, ForumPostVersion
+from web.models import ForumPost, ForumPostVersion, User
 
 from ._csrf_protection import csrf_safe_method
 
+
 class OnForumEditPost(EventBase):
+    user: User
     post: ForumPost
     title: str
-    prev_source: str
     source: str
+    prev_title: str
+    prev_source: str
 
 
 class OnForumDeletePost(EventBase):
+    user: User
     post: ForumPost
     title: str
     source: str
@@ -40,7 +43,7 @@ def api_fetch(context, params):
         raise ModuleError('Сообщение "%d" не существует', post_id)
     post = post[0]
 
-    if not permissions.check(context.user, 'view', post):
+    if not context.user.has_perm('roles.view_forum_posts', post):
         raise ModuleError('Недостаточно прав для просмотра сообщения')
 
     q = ForumPostVersion.objects.filter(post=post).order_by('-created_at')
@@ -79,7 +82,7 @@ def api_update(context, params):
         raise ModuleError('Сообщение "%d" не существует', post_id)
     post = post[0]
 
-    if not permissions.check(context.user, 'edit', post):
+    if not context.user.has_perm('roles.edit_forum_posts', post):
         raise ModuleError('Недостаточно прав для редактирования сообщения')
 
     latest_version = ForumPostVersion.objects.filter(post=post).order_by('-created_at')[:1]
@@ -90,12 +93,14 @@ def api_update(context, params):
         new_version.save()
         post.updated_at = datetime.now(timezone.utc)
 
+    prev_title = post.name
+
     if title != post.name:
         post.name = title
 
     post.save()
 
-    OnForumEditPost(post, title, prev_source, source).emit()
+    OnForumEditPost(context.user, post, title, source, prev_title, prev_source).emit()
 
     content = single_pass_render(source, RenderContext(None, None, {}, context.user), 'message')
 
@@ -117,12 +122,12 @@ def api_delete(context, params):
         raise ModuleError('Сообщение "%d" не существует', post_id)
     post = post[0]
 
-    if not permissions.check(context.user, 'delete', post):
+    if not context.user.has_perm('roles.delete_forum_posts', post):
         raise ModuleError('Недостаточно прав для удаления сообщения')
     
     latest_version = ForumPostVersion.objects.filter(post=post).order_by('-created_at').first()
     
-    OnForumDeletePost(post, post.name, latest_version.source).emit()
+    OnForumDeletePost(context.user, post, post.name, latest_version.source).emit()
 
     post.delete()
 
@@ -140,7 +145,7 @@ def api_fetchversions(context, params):
         raise ModuleError('Сообщение "%d" не существует', post_id)
     post = post[0]
 
-    if not permissions.check(context.user, 'view', post):
+    if not context.user.has_perm('roles.view_forum_posts', post):
         raise ModuleError('Недостаточно прав для просмотра сообщения')
 
     q = ForumPostVersion.objects.filter(post=post).order_by('-created_at')

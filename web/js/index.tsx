@@ -1,5 +1,4 @@
-import * as React from 'react'
-import * as ReactDOM from 'react-dom'
+import React from 'react'
 import './articles/auto-resize-iframe'
 import { makeCodeBlock } from './articles/codeblock'
 import { makeCollapsible } from './articles/collapsible'
@@ -26,64 +25,68 @@ import { makeRecentPosts } from './forum/recent-posts-pagination'
 import { makeForumThread } from './forum/thread-pagination'
 import ReactivePage from './reactive/router'
 import { makePasswordToggle } from './util/password'
-
-function renderTo(where: HTMLElement, what: any) {
-  ReactDOM.render(what, where)
-}
+import AdminSusUsers from './entrypoints/admin-sus-users'
+import { renderTo } from '~util/react-render-into'
 
 attachApiMessageListener()
 
 window.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('#create-new-page').forEach((node: HTMLElement) => renderTo(node, <Page404 {...JSON.parse(node.dataset.config)} />))
+  document.querySelectorAll('#create-new-page').forEach((node: HTMLElement) => renderTo(node, <Page404 {...JSON.parse(node.dataset.config!)} />))
   document
     .querySelectorAll('#page-options-container')
-    .forEach((node: HTMLElement) => renderTo(node, <PageOptions {...JSON.parse(node.dataset.config)} />))
-  document.querySelectorAll('#login-status').forEach((node: HTMLElement) => renderTo(node, <PageLoginStatus {...JSON.parse(node.dataset.config)} />))
+    .forEach((node: HTMLElement) => renderTo(node, <PageOptions {...JSON.parse(node.dataset.config!)} />))
+  document.querySelectorAll('#login-status').forEach((node: HTMLElement) => renderTo(node, <PageLoginStatus {...JSON.parse(node.dataset.config!)} />))
   document
     .querySelectorAll('.w-forum-new-thread')
-    .forEach((node: HTMLElement) => renderTo(node, <ForumNewThread {...JSON.parse(node.dataset.config)} />))
-  document.querySelectorAll('.w-forum-new-post').forEach((node: HTMLElement) => renderTo(node, <ForumNewPost {...JSON.parse(node.dataset.config)} />))
+    .forEach((node: HTMLElement) => renderTo(node, <ForumNewThread {...JSON.parse(node.dataset.config!)} />))
+  document.querySelectorAll('.w-forum-new-post').forEach((node: HTMLElement) => renderTo(node, <ForumNewPost {...JSON.parse(node.dataset.config!)} />))
   document
     .querySelectorAll('.w-forum-thread-options')
-    .forEach((node: HTMLElement) => renderTo(node, <ForumThreadOptions {...JSON.parse(node.dataset.config)} />))
+    .forEach((node: HTMLElement) => renderTo(node, <ForumThreadOptions {...JSON.parse(node.dataset.config!)} />))
 
   makePasswordToggle()
 
   // add new things here!
   const processNode = (node: HTMLElement) => {
-    if (!node.classList) return
-    if (node.classList.contains('w-collapsible')) {
-      makeCollapsible(node)
-    } else if (node.classList.contains('w-tabview')) {
-      makeTabView(node)
-    } else if (node.classList.contains('w-rate-module')) {
-      makeUpDownRateModule(node)
-    } else if (node.classList.contains('w-stars-rate-module')) {
-      makeStarsRateModule(node)
-    } else if (node.classList.contains('w-list-pages')) {
-      makeListPages(node)
-    } else if (node.classList.contains('w-wanted-pages')) {
-      makeWantedPages(node)
-    } else if (node.classList.contains('w-toc')) {
-      makeTOC(node)
-    } else if (node.classList.contains('w-forum-post-options')) {
-      renderTo(node, <ForumPostOptions {...JSON.parse(node.dataset.config)} />)
-    } else if (node.classList.contains('w-forum-thread')) {
-      makeForumThread(node)
-    } else if (node.classList.contains('w-forum-recent-posts')) {
-      makeRecentPosts(node)
-    } else if (node.classList.contains('w-site-changes')) {
-      makeSiteChanges(node)
-    } else if (node.classList.contains('w-date')) {
-      makeDate(node)
-    } else if (node.classList.contains('w-footnoteref')) {
-      makeFootnote(node)
-    } else if (node.classList.contains('w-code')) {
-      makeCodeBlock(node)
-    } else if (node.classList.contains('w-ref-form')) {
-      makeRefForm(node)
-    } else if (node.classList.contains('w-interwiki')) {
-      makeInterwiki(node)
+    try {
+      if (!node.classList || node.classList.contains('w-fake-node')) return
+      if (node.classList.contains('w-collapsible')) {
+        makeCollapsible(node)
+      } else if (node.classList.contains('w-tabview')) {
+        makeTabView(node)
+      } else if (node.classList.contains('w-rate-module')) {
+        makeUpDownRateModule(node)
+      } else if (node.classList.contains('w-stars-rate-module')) {
+        makeStarsRateModule(node)
+      } else if (node.classList.contains('w-list-pages')) {
+        makeListPages(node)
+      } else if (node.classList.contains('w-wanted-pages')) {
+        makeWantedPages(node)
+      } else if (node.classList.contains('w-toc')) {
+        makeTOC(node)
+      } else if (node.classList.contains('w-forum-post-options')) {
+        renderTo(node, <ForumPostOptions {...JSON.parse(node.dataset.config!)} />)
+      } else if (node.classList.contains('w-forum-thread')) {
+        makeForumThread(node)
+      } else if (node.classList.contains('w-forum-recent-posts')) {
+        makeRecentPosts(node)
+      } else if (node.classList.contains('w-site-changes')) {
+        makeSiteChanges(node)
+      } else if (node.classList.contains('w-date')) {
+        makeDate(node)
+      } else if (node.classList.contains('w-footnoteref')) {
+        makeFootnote(node)
+      } else if (node.classList.contains('w-code')) {
+        makeCodeBlock(node)
+      } else if (node.classList.contains('w-ref-form')) {
+        makeRefForm(node)
+      } else if (node.classList.contains('w-interwiki')) {
+        makeInterwiki(node)
+      } else if (node.classList.contains('w-admin-sus-users')) {
+        renderTo(node, <AdminSusUsers />)
+      }
+    } catch (e) {
+      console.error('Failed to process node', node, e)
     }
   }
 
@@ -94,7 +97,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   })
 
-  const reactiveRoot: HTMLElement = document.querySelector('#reactive-root')
+  const reactiveRoot: HTMLElement | null = document.querySelector('#reactive-root')
   if (reactiveRoot) {
     renderTo(reactiveRoot, <ReactivePage />)
   }

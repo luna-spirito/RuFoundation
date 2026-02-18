@@ -65,7 +65,7 @@ const ArticleRename: React.FC<Props> = ({ pageId, isNew, onClose }) => {
     }
 
     setSaving(true)
-    setError(undefined)
+    setError('')
     setSavingSuccess(false)
 
     const input = {
@@ -75,6 +75,7 @@ const ArticleRename: React.FC<Props> = ({ pageId, isNew, onClose }) => {
     try {
       await updateArticle(pageId, input)
       setSavingSuccess(true)
+      setSaving(false)
       await sleep(1000)
       setSavingSuccess(false)
       window.scrollTo(window.scrollX, 0)
@@ -104,7 +105,7 @@ const ArticleRename: React.FC<Props> = ({ pageId, isNew, onClose }) => {
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }

@@ -1,28 +1,27 @@
+import re
+import json
 import datetime
+import urllib.parse
+
+from typing import Optional, Tuple
 
 from django.conf import settings
-
 from django.views.generic.base import TemplateResponseMixin, ContextMixin, View
 from django.template.loader import render_to_string
 from django.http import HttpResponseRedirect
-import urllib.parse
+
+from web.models.site import get_current_site
+from web.models.articles import Article, Category
+from web.models.notifications import UserNotificationMapping
+from web.controllers import articles, notifications
+from web.util.css import normalize_computed_style
+
+from modules.listpages import page_to_listpages_vars
 
 from renderer.templates import apply_template
 from renderer.utils import render_user_to_json
-from web.models.articles import Article
-from web.controllers import articles, permissions, notifications
-
 from renderer import single_pass_render, single_pass_render_with_excerpt
 from renderer.parser import RenderContext
-from modules.listpages import page_to_listpages_vars
-
-from typing import Optional, Tuple
-import json
-
-from web.models.notifications import UserNotificationMapping
-from web.models.site import get_current_site
-
-import re
 
 
 class ArticleView(TemplateResponseMixin, ContextMixin, View):
@@ -55,8 +54,9 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
     def _render_nav(self, name: str, article: Article, path_params: dict[str, str]) -> str:
         nav = articles.get_article(name)
         if nav:
-            return single_pass_render(articles.get_latest_source(nav), RenderContext(article, nav, path_params, self.request.user))
-        return ""
+            context = RenderContext(article, nav, path_params, self.request.user)
+            return single_pass_render(articles.get_latest_source(nav), context), context.computed_style
+        return '', ''
 
     @staticmethod
     def get_this_page_params(path_params: dict[str, str], param: str, more_params: Optional[dict[str, str]]=None):
@@ -83,46 +83,46 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
         image = None
         rev_number = 0
         updated_at = None
+        computed_style = ''
         if article is not None:
-            if not permissions.check(self.request.user, 'view', article):
-                context = {'page_id': fullname}
-                content = render_to_string(self.template_403, context)
-                redirect_to = None
-                title = ''
-                status = 403
-                default_theme = True
-            else:
-                template_source = '%%content%%'
+            template_source = '%%content%%'
 
-                if article.name != '_template':
-                    template = articles.get_article('%s:_template' % article.category)
-                    if template:
-                        template_source = articles.get_latest_source(template)
+            if article.name != '_template':
+                template = articles.get_article('%s:_template' % article.category)
+                if template:
+                    template_source = articles.get_latest_source(template)
 
-                source = page_to_listpages_vars(article, template_source, index=1, total=1)
-                source = apply_template(source, lambda param: self.get_this_page_params(path_params, param, {'canonical_url': canonical_url}))
-                context = RenderContext(article, article, path_params, self.request.user)
-                content, excerpt, image = single_pass_render_with_excerpt(source, context)
-                redirect_to = context.redirect_to
-                title = context.title
-                status = context.status
-                default_theme = context.default_theme
+            source = page_to_listpages_vars(article, template_source, index=1, total=1)
+            source = apply_template(source, lambda param: self.get_this_page_params(path_params, param, {'canonical_url': canonical_url}))
+            context = RenderContext(article, article, path_params, self.request.user)
+            content, excerpt, image = single_pass_render_with_excerpt(source, context)
+            redirect_to = context.redirect_to
+            title = context.title
+            status = context.status
+            default_theme = context.default_theme
+            computed_style = context.computed_style
 
-                rev_number = articles.get_latest_log_entry(article).rev_number
-                updated_at = article.updated_at
+            rev_number = articles.get_latest_log_entry(article).rev_number
+            updated_at = article.updated_at
+            if context.og_image:
+                image = context.og_image
+            if context.og_description:
+                excerpt = context.og_description
         else:
-            category, name = articles.get_name(fullname)
+            category, _ = articles.get_name(fullname)
             options = {'page_id': fullname, 'pathParams': path_params}
-            context = {'options': json.dumps(options), 'allow_create': articles.is_full_name_allowed(fullname) and permissions.check(self.request.user, "create", Article(name=name, category=category))}
+            context = {'options': json.dumps(options), 'allow_create': articles.is_full_name_allowed(fullname) and self.request.user.has_perm('roles.create_articles', Category.get_or_default_category(category))}
             content = render_to_string(self.template_404, context)
             redirect_to = None
             title = ''
             status = 404
             default_theme = True
-        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme
+        return content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme, computed_style
 
     def get_context_data(self, **kwargs):
         path = kwargs["path"]
+        status = None
+        content = None
 
         # wikidot hack: rewrite forum URLs to forum:start, forum:category, forum:thread
         # why do they need to support templates here?
@@ -146,16 +146,27 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
         article_name, path_params = self.get_path_params(path)
 
         encoded_params = ''
-        for param in path_params:
+        lowercase_params = {k.lower(): v for k, v in path_params.items()}
+        not_none_params = [k for k, v in lowercase_params.items() if v is not None]
+        for param in sorted(not_none_params):
             encoded_params += '/%s' % param
-            if path_params[param] is not None:
-                encoded_params += '/%s' % urllib.parse.quote(path_params[param], safe='')
+            if lowercase_params[param] is not None:
+                encoded_params += '/%s' % urllib.parse.quote(lowercase_params[param], safe='')
+        none_params = [k for k, v in lowercase_params.items() if v is None]
+        if none_params:
+            encoded_params += '/%s' % none_params[0]
 
         normalized_article_name = articles.normalize_article_name(article_name)
         if normalized_article_name != article_name:
             return {'redirect_to': '/%s%s' % (normalized_article_name, encoded_params)}
-
+        
         article = articles.get_article(article_name)
+        perms_obj = article or articles.get_article_category(article_name)
+        if perms_obj and not self.request.user.has_perm('roles.view_articles', perms_obj):
+            content = render_to_string(self.template_403, {'page_id': article_name})
+            status = 403
+            article = None
+        
         comment_thread_id, comment_count = articles.get_comment_info(article)
         breadcrumbs = [{'url': '/' + articles.get_full_name(x), 'title': x.title} for x in
                        articles.get_breadcrumbs(article)]
@@ -164,13 +175,13 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             return {'redirect_to': '/forum/t-%d/%s' % (comment_thread_id, articles.normalize_article_name(article.display_name))}
 
         # this is needed for parser debug logging so that page content is always the last printed
-        nav_top = self._render_nav("nav:top", article, path_params)
-        nav_side = self._render_nav("nav:side", article, path_params)
+        nav_top, nav_top_styles = self._render_nav("nav:top", article, path_params)
+        nav_side, nav_side_styles = self._render_nav("nav:side", article, path_params)
 
         site = get_current_site()
-        canonical_url = '//%s/%s%s' % (site.domain, article.full_name if article else article_name, encoded_params)
+        canonical_url = 'https://%s/%s%s' % (site.domain, article.full_name if article else article_name, encoded_params)
 
-        content, status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme = self.render(article_name, article, path_params, canonical_url)
+        rendered_content, rendered_status, redirect_to, excerpt, image, title, rev_number, updated_at, default_theme, computed_style = self.render(article_name, article, path_params, canonical_url)
 
         context = super(ArticleView, self).get_context_data(**kwargs)
 
@@ -185,21 +196,29 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
 
         options_config = {
             'optionsEnabled': article is not None,
-            'editable': permissions.check(self.request.user, "edit", article),
-            'lockable': permissions.check(self.request.user, "lock", article),
+            'editable': self.request.user.has_perm('roles.edit_articles', article),
+            'lockable': self.request.user.has_perm('roles.lock_articles', article),
+            'tagable': self.request.user.has_perm('roles.tag_articles', article),
             'pageId': article_name,
             'rating': article_rating,
             'ratingMode': article_rating_mode,
             'ratingVotes': article_votes,
             'ratingPopularity': article_popularity,
             'pathParams': path_params,
-            'canRate': permissions.check(self.request.user, "rate", article),
-            'canComment': permissions.check(self.request.user, "view-comments", article) if article else False,
+            'canRate': self.request.user.has_perm('roles.rate_articles', article),
+            'canComment': self.request.user.has_perm('roles.comment_articles', article) if article else False,
+            'canViewComments': self.request.user.has_perm('roles.view_article_comments', article) if article else False,
             'commentThread': ('/%s/comments/show' % normalized_article_name) if article else None,
             'commentCount': comment_count,
-            'canDelete': permissions.check(self.request.user, "delete", article),
-            'canCreateTags': site.get_settings().creating_tags_allowed,
+            'canDelete': self.request.user.has_perm('roles.delete_articles', article),
+            'canCreateTags': site.settings.creating_tags_allowed,
+            'canManageFiles': self.request.user.has_perm('roles.manage_article_files', article),
+            'canRename': self.request.user.has_perm('roles.move_articles', article),
+            'canCreateHere': self.request.user.has_perm('roles.create_articles', article),
+            'canManageAuthors': self.request.user.has_perm('roles.manage_article_authors', article),
+            'canResetVotes': self.request.user.has_perm('roles.reset_article_votes', article),
             'canWatch': not self.request.user.is_anonymous,
+            'preferences': {} if self.request.user.is_anonymous else self.request.user.preferences.all(),
             'isWatching': not self.request.user.is_anonymous and (
                 notifications.is_subscribed(self.request.user, article=article) or \
                 notifications.is_subscribed(self.request.user, forum_thread=path_params.get("t"))
@@ -207,6 +226,8 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
         }
 
         tags_categories = articles.get_tags_categories(article)
+
+        computed_style = normalize_computed_style(nav_top_styles + nav_side_styles + computed_style)
 
         context.update({
             'site_name': site.title,
@@ -225,7 +246,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             'nav_side': nav_side,
 
             'title': title,
-            'content': content,
+            'content': content or rendered_content,
             'tags_categories': tags_categories,
             'breadcrumbs': breadcrumbs,
             'rev_number': rev_number,
@@ -234,8 +255,10 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             'login_status_config': json.dumps(login_status_config),
             'options_config': json.dumps(options_config),
 
-            'status': status,
-            'redirect_to': redirect_to,
+            'computed_style': computed_style,
+
+            'status': status or rendered_status,
+            'redirect_to': redirect_to
         })
 
         if settings.GOOGLE_TAG_ID:
@@ -244,7 +267,7 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
             })
 
         category_name, _ = articles.get_name(article_name)
-        category = permissions.get_or_default_category(category_name)
+        category = Category.get_or_default_category(category_name)
         context.update({
             'noindex': not category.is_indexed
         })
@@ -254,6 +277,6 @@ class ArticleView(TemplateResponseMixin, ContextMixin, View):
     def get(self, request, *args, **kwargs):
         path = request.META['RAW_PATH'][1:]
         context = self.get_context_data(path=path)
-        if context['redirect_to']:
+        if context.get('redirect_to'):
             return HttpResponseRedirect(context['redirect_to'])
         return self.render_to_response(context, status=context['status'])

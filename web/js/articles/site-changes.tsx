@@ -1,5 +1,5 @@
-import * as React from 'react'
-import * as ReactDOM from 'react-dom'
+import React from 'react'
+import { renderTo, unmountFromRoot } from '~util/react-render-into'
 import { callModule, ModuleRenderResponse } from '../api/modules'
 import Loader from '../util/loader'
 import { showErrorModal } from '../util/wikidot-modal'
@@ -12,8 +12,8 @@ export function makeSiteChanges(node: HTMLElement) {
   ;(node as any)._sitechanges = true
   // end hack
 
-  const scBasePathParams = JSON.parse(node.dataset.siteChangesPathParams)
-  const scBaseParams = JSON.parse(node.dataset.siteChangesParams)
+  const scBasePathParams = JSON.parse(node.dataset.siteChangesPathParams!)
+  const scBaseParams = JSON.parse(node.dataset.siteChangesParams!)
 
   // display loader when needed.
   const loaderInto = document.createElement('div')
@@ -32,14 +32,14 @@ export function makeSiteChanges(node: HTMLElement) {
   node.appendChild(loaderInto)
 
   //
-  const switchPage = async (e: MouseEvent, page: string, addParams: {}) => {
+  const switchPage = async (e: MouseEvent | null, page: string, addParams: {}) => {
     if (e) {
       e.preventDefault()
       e.stopPropagation()
     }
     loaderInto.style.display = 'flex'
     // because our loader is React, we should display it like this.
-    ReactDOM.render(<Loader size={80} borderSize={8} />, loaderInto)
+    renderTo(loaderInto, <Loader size={80} borderSize={8} />)
     //
     try {
       const { result: rendered } = await callModule<ModuleRenderResponse>({
@@ -48,15 +48,17 @@ export function makeSiteChanges(node: HTMLElement) {
         pathParams: Object.assign(scBasePathParams, { p: page }, addParams),
         params: scBaseParams,
       })
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       const tmp = document.createElement('div')
       tmp.innerHTML = rendered
       const newNode = tmp.firstElementChild
-      node.parentNode.replaceChild(newNode, node)
+      if (newNode && node.parentNode) {
+        node.parentNode.replaceChild(newNode, node)
+      }
     } catch (e) {
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       showErrorModal(e.error || 'Ошибка связи с сервером')
@@ -67,13 +69,13 @@ export function makeSiteChanges(node: HTMLElement) {
   const pagers = node.querySelectorAll(':scope > .changes-list > .pager')
   pagers.forEach(pager =>
     pager.querySelectorAll('*[data-pagination-target]').forEach((node: HTMLElement) => {
-      node.addEventListener('click', e => switchPage(e, node.dataset.paginationTarget, {}))
+      node.addEventListener('click', e => switchPage(e, node.dataset.paginationTarget!, {}))
     }),
   )
 
   // handle type filters
-  let allFilter = null
-  let typeFilters = []
+  let allFilter: HTMLInputElement | null = null
+  let typeFilters: Array<HTMLInputElement> = []
   node.querySelectorAll('.w-type-filter input').forEach((input: HTMLInputElement) => {
     if (input.name === '*') {
       allFilter = input
@@ -82,7 +84,11 @@ export function makeSiteChanges(node: HTMLElement) {
     }
   })
 
-  allFilter.addEventListener('change', e => {
+  // TypeScript is a bit dumb here and doesn't detect that we are setting this field from the forEach
+  ;(allFilter as HTMLInputElement | null)?.addEventListener('change', e => {
+    if (!(e.target instanceof HTMLInputElement)) {
+      return
+    }
     if (!e.target.checked && !typeFilters.find(x => x.checked)) {
       e.target.checked = true
       return
@@ -94,16 +100,23 @@ export function makeSiteChanges(node: HTMLElement) {
 
   typeFilters.forEach(filter => {
     filter.addEventListener('change', e => {
-      if (!e.target.checked && !typeFilters.find(x => x.checked)) {
-        allFilter.checked = true
+      if (!(e.target instanceof HTMLInputElement)) {
         return
       }
-      allFilter.checked = false
+      if (!e.target.checked && !typeFilters.find(x => x.checked)) {
+        if (allFilter) {
+          allFilter.checked = true
+        }
+        return
+      }
+      if (allFilter) {
+        allFilter.checked = false
+      }
     })
   })
 
   node.querySelector('form input.btn')?.addEventListener('click', () => {
-    const types = []
+    const types: Array<string> = []
     typeFilters.forEach(filter => {
       if (filter.checked) {
         types.push(filter.name)
@@ -114,7 +127,7 @@ export function makeSiteChanges(node: HTMLElement) {
     const perPage = (node.querySelector('#rev-perpage') as HTMLSelectElement).value
     const userName = (node.querySelector('#rev-username') as HTMLInputElement).value
 
-    const addParams = { category, perPage, userName }
+    const addParams: Record<string, string> = { category, perPage, userName }
     typeFilters.forEach(filter => (addParams[filter.name] = 'false'))
     types.forEach(t => (addParams[t] = 'true'))
 

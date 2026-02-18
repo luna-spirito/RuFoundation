@@ -55,12 +55,11 @@ const readErrorFromBody = (e: Response): Promise<APIError | null> => {
           const e = j.error || null
           const fields = j.fields || null
           if (e) {
-            resolve(new APIError(e.charAt(0).toUpperCase() + e.substr(1), e.status, fields, null))
+            resolve(new APIError(e.charAt(0).toUpperCase() + e.substr(1), e.status, fields, undefined))
             return
           }
           resolve(null)
         } catch (e) {
-          console.log(e)
           resolve(null)
         }
       })
@@ -90,10 +89,10 @@ export async function wFetch<T>(url: string, props?: WRequestInit): Promise<T> {
     j = await rsp.json()
   } catch (e) {
     const error: any = (await readErrorFromBody(e)) || {}
-    throw new APIError(error.error || 'Ошибка чтения ответа', e.status || 0, error.fields || null, null)
+    throw new APIError(error.error || 'Ошибка чтения ответа', e.status || 0, error.fields || null, undefined)
   }
   if (!rsp.ok) {
-    throw new APIError(j.error, rsp.status, j.fields || null, null)
+    throw new APIError(j.error, rsp.status, j.fields || null, undefined)
   }
   return j as T
 }
@@ -116,14 +115,12 @@ async function doFetch(url: string, props?: WRequestInit): Promise<Response> {
     })
     xhr.addEventListener('load', () => {
       if (xhr.readyState === 4) {
-        console.log(xhr)
         const response: Response = {
           headers: new Headers({}),
           ok: true,
           redirected: false,
           status: xhr.status,
           statusText: xhr.statusText,
-          trailer: null,
           type: 'basic',
           url,
           clone() {
@@ -139,7 +136,7 @@ async function doFetch(url: string, props?: WRequestInit): Promise<Response> {
           bodyUsed: false,
           async arrayBuffer(): Promise<ArrayBuffer> {
             const chunkEncoder = new TextEncoder()
-            return chunkEncoder.encode(xhr.response)
+            return chunkEncoder.encode(xhr.response).buffer as ArrayBuffer
           },
           async blob(): Promise<Blob> {
             return new Blob([xhr.response])
@@ -152,6 +149,10 @@ async function doFetch(url: string, props?: WRequestInit): Promise<Response> {
           },
           async text(): Promise<string> {
             return xhr.responseText
+          },
+          async bytes(): Promise<Uint8Array> {
+            const chunkEncoder = new TextEncoder()
+            return chunkEncoder.encode(xhr.response)
           },
         }
         if (response.status >= 200 && response.status <= 299) {

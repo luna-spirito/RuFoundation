@@ -1,7 +1,10 @@
+import { Editor, Monaco } from '@monaco-editor/react'
+import { editor } from 'monaco-editor'
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { fetchForumPost, previewForumPost } from '../api/forum'
+import { fetchAllUsers } from '../api/user'
 import useConstCallback from '../util/const-callback'
 import Loader from '../util/loader'
 import WikidotModal from '../util/wikidot-modal'
@@ -21,6 +24,7 @@ export interface ForumPostSubmissionData {
 interface Props {
   initialTitle?: string
   isThread?: boolean
+  useAdvancedEditor?: boolean
   onSubmit?: (input: ForumPostSubmissionData) => Promise<void>
   onPreview?: (result: ForumPostPreviewData) => void
   onClose?: () => void
@@ -53,9 +57,18 @@ const Styles = styled.div`
   }
 `
 
+const StyledEditor = styled(Editor)`
+  border: 1px solid #ccc;
+
+  div {
+    max-width: none !important;
+  }
+`
+
 const ForumPostEditor: React.FC<Props> = ({
   initialTitle,
   isThread,
+  useAdvancedEditor,
   onSubmit: onSubmitDelegate,
   onPreview: onPreviewDelegate,
   onClose: onCloseDelegate,
@@ -70,6 +83,23 @@ const ForumPostEditor: React.FC<Props> = ({
   const [savingSuccess, setSavingSuccess] = useState(false)
   const [error, setError] = useState('')
   const [fatalError, setFatalError] = useState(false)
+  const [usernameSet, setUsernameSet] = useState<Set<string>>(new Set())
+  const [mentionDecorationIds, setMentionDecorationIds] = useState<string[]>([])
+
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<Monaco | null>(null)
+
+  const monacoOptions: editor.IStandaloneEditorConstructionOptions = {
+    minimap: { enabled: false },
+    wordWrap: 'on',
+    lineNumbers: 'off',
+    lineDecorationsWidth: 0,
+    lineNumbersMinChars: 0,
+    glyphMargin: false,
+    folding: false,
+    quickSuggestions: false,
+    readOnly: loading || saving,
+  }
 
   const handleRefresh = useConstCallback(e => {
     if (!saving) {
@@ -83,7 +113,7 @@ const ForumPostEditor: React.FC<Props> = ({
     ;(window as any)._closePostEditor = () => {
       onCancel(undefined)
     }
-    if (!isNew) {
+    if (!isNew && postId !== undefined) {
       setLoading(true)
       fetchForumPost(postId)
         .then(data => {
@@ -99,11 +129,75 @@ const ForumPostEditor: React.FC<Props> = ({
         })
     }
 
+    fetchAllUsers()
+      .then(users => {
+        setUsernameSet(new Set(users.filter(u => u.type === 'normal' || u.type === 'bot').map(u => u.username.toLowerCase())))
+      })
+      .catch(e => {
+        setFatalError(false)
+        setError(e.error || 'Ошибка связи с сервером')
+      })
+
     return () => {
       window.removeEventListener('beforeunload', handleRefresh)
       ;(window as any)._closePostEditor = undefined
     }
   }, [])
+
+  useEffect(() => {
+    highlightMentions(source)
+  }, [source, usernameSet])
+
+  const onEditorDidMount = useConstCallback((editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
+    editorRef.current = editor
+    monacoRef.current = monaco
+  })
+
+  const highlightMentions = useConstCallback((text: string) => {
+    const editor = editorRef.current
+    const monaco = monacoRef.current
+    if (!editor || !monaco) return
+
+    const model = editorRef.current?.getModel()
+    if (!model) return
+
+    const mentionRegex = /@[\w.-]+/g
+    const newDecorations: editor.IModelDeltaDecoration[] = []
+    let match
+
+    while ((match = mentionRegex.exec(source)) !== null) {
+      const mention = match[0]
+      const username = mention.substring(1)
+
+      if (usernameSet.has(username)) {
+        const startPos = model.getPositionAt(match.index)
+        const endPos = model.getPositionAt(match.index + mention.length)
+        const range = new monaco.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column)
+
+        newDecorations.push({
+          range: range,
+          options: {
+            inlineClassName: 'w-user-mention',
+          },
+        })
+      }
+    }
+
+    const newMentionIds = editor.deltaDecorations(mentionDecorationIds, newDecorations)
+    setMentionDecorationIds(newMentionIds)
+  })
+
+  const highlightMentionsStr = useConstCallback((text: string) => {
+    const regex = /@[\w.-]+/g
+
+    return text.replace(regex, full => {
+      const username = full.slice(1)
+      if (usernameSet.has(username.toLowerCase())) {
+        return `<span class="w-user-mention">${full}</span>`
+      }
+      return full
+    })
+  })
 
   const onSubmit = useConstCallback(async e => {
     if (e) {
@@ -117,14 +211,14 @@ const ForumPostEditor: React.FC<Props> = ({
         source,
       }
       setSaving(true)
-      setError(null)
+      setError('')
       setSavingSuccess(false)
       try {
         await onSubmitDelegate(input)
-        setError(null)
+        setError('')
         setSavingSuccess(false)
         setSource('')
-        setName(initialTitle)
+        setName(initialTitle ?? '')
       } catch (e) {
         setLoading(false)
         setFatalError(false)
@@ -145,7 +239,7 @@ const ForumPostEditor: React.FC<Props> = ({
       const input: ForumPostPreviewData = {
         name: name,
         description,
-        content: rendered,
+        content: highlightMentionsStr(rendered),
       }
       onPreviewDelegate(input)
     }
@@ -161,22 +255,21 @@ const ForumPostEditor: React.FC<Props> = ({
     }
   })
 
-  const onChange = useConstCallback(e => {
-    switch (e.target.name) {
-      case 'name':
-        setName(e.target.value)
-        break
-      case 'source':
-        setSource(e.target.value)
-        break
-      case 'description':
-        setDescription(e.target.value)
-        break
+  const onInputChange = useConstCallback(e => {
+    const { name, value } = e.target
+    if (name === 'name') {
+      setName(value)
+    } else if (name === 'description') {
+      setDescription(value)
     }
   })
 
+  const onSourceChange = useConstCallback((value: string) => {
+    setSource(value || '')
+  })
+
   const onCloseError = useConstCallback(() => {
-    setError(null)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }
@@ -218,7 +311,7 @@ const ForumPostEditor: React.FC<Props> = ({
                 <input
                   className="text form-control"
                   value={name}
-                  onChange={onChange}
+                  onChange={onInputChange}
                   name="name"
                   type="text"
                   size={35}
@@ -237,7 +330,7 @@ const ForumPostEditor: React.FC<Props> = ({
                     rows={2}
                     className="form-control"
                     value={description}
-                    onChange={onChange}
+                    onChange={onInputChange}
                     name="description"
                     maxLength={1000}
                     disabled={loading || saving}
@@ -250,16 +343,29 @@ const ForumPostEditor: React.FC<Props> = ({
         {/* This is not supported right now but we have to add empty div for BHL */}
         <div id="wd-editor-toolbar-panel" className="wd-editor-toolbar-panel" />
         <div className={`w-editor-area ${loading ? 'loading' : ''}`}>
-          <textarea
-            className="form-control"
-            value={source}
-            onChange={onChange}
-            name="source"
-            rows={10}
-            cols={60}
-            style={{ width: '95%' }}
-            disabled={loading || saving}
-          />
+          {!useAdvancedEditor && (
+            <textarea
+              className="form-control"
+              value={source}
+              onChange={e => onSourceChange(e.target.value)}
+              name="source"
+              rows={10}
+              cols={60}
+              style={{ width: '95%' }}
+              disabled={loading || saving}
+            />
+          )}
+          {useAdvancedEditor && (
+            <StyledEditor
+              className="form-control"
+              loading="Загрузка, терпите, карлики..."
+              height="250px"
+              value={source}
+              onChange={onSourceChange}
+              onMount={onEditorDidMount}
+              options={monacoOptions}
+            />
+          )}
           {loading && <Loader className="loader" />}
         </div>
         <div className="buttons alignleft">

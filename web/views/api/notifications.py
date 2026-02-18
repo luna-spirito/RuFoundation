@@ -20,11 +20,10 @@ class NotificationsView(APIView):
             'id': notification.id,
             'type': notification.type,
             'created_at': notification.created_at.isoformat(),
-            'referred_to': notification.referred_to,
             'is_viewed': is_viewed,
         }, **notification.meta)
 
-        if notification.type in [UserNotification.NotificationType.NewThreadPost, UserNotification.NotificationType.NewPostReply]:
+        if notification.type in [UserNotification.NotificationType.NewThreadPost, UserNotification.NotificationType.NewPostReply, UserNotification.NotificationType.ForumMention]:
             base_notification['message'] = single_pass_render(base_notification['message_source'], render_context, mode='message'),
 
         return base_notification
@@ -61,10 +60,18 @@ class NotificationsSubscribeView(APIView):
             raise APIError('Некорректные параметры подписки', 400)
 
         return args
+    
+    @staticmethod
+    def _verify_access(request: HttpRequest, args):
+        if args.get('article') and not request.user.has_perm('roles.view_articles', args.get('article')):
+            raise APIError('Недостаточно прав', 403)
+        if args.get('forum_thread') and not request.user.has_perm('roles.view_forum_threads', args.get('forum_thread')):
+            raise APIError('Недостаточно прав', 403)
 
     @takes_json
     def post(self, request: HttpRequest, *args, **kwargs):
         args = self._get_subscription_info(self.json_input)
+        self._verify_access(request, args)
         subscription = notifications.subscribe_to_notifications(request.user, **args)
 
         if subscription:
@@ -75,6 +82,7 @@ class NotificationsSubscribeView(APIView):
     @takes_json
     def delete(self, request: HttpRequest, *args, **kwargs):
         args = self._get_subscription_info(self.json_input)
+        self._verify_access(request, args)
         subscription = notifications.unsubscribe_from_notifications(request.user, **args)
 
         if subscription:

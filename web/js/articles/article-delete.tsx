@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
 import styled from 'styled-components'
-import { deleteArticle, fetchArticle, updateArticle } from '../api/articles'
+import { ArticleUpdateRequest, deleteArticle, fetchArticle, updateArticle } from '../api/articles'
 import sleep from '../util/async-sleep'
 import useConstCallback from '../util/const-callback'
 import WikidotModal from '../util/wikidot-modal'
@@ -10,6 +10,7 @@ interface Props {
   pageId: string
   onClose?: () => void
   canDelete?: boolean
+  canRename?: boolean
 }
 
 const Styles = styled.div`
@@ -35,7 +36,7 @@ const Styles = styled.div`
   }
 `
 
-const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete }) => {
+const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete, canRename }) => {
   const [permanent, setPermanent] = useState(false)
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -49,6 +50,7 @@ const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete }) => {
     fetchArticle(pageId)
       .then(data => {
         setNewName('deleted:' + data.pageId)
+        setPermanent(Boolean(canDelete && !canRename))
       })
       .catch(e => {
         setFatalError(true)
@@ -66,13 +68,13 @@ const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete }) => {
     }
 
     setSaving(true)
-    setError(undefined)
+    setError('')
     setSavingSuccess(false)
 
     try {
       let actualNewName = newName
       if (!permanent) {
-        const input = {
+        const input: ArticleUpdateRequest = {
           pageId: newName,
           tags: [],
           forcePageId: true,
@@ -111,13 +113,13 @@ const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete }) => {
   const onChange = useConstCallback(e => {
     switch (e.target.name) {
       case 'permanent':
-        setPermanent(!permanent)
+        if (canRename) setPermanent(!permanent)
         break
     }
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }
@@ -179,9 +181,9 @@ const ArticleDelete: React.FC<Props> = ({ pageId, onClose, canDelete }) => {
                   onChange={onChange}
                   id="page-rename-input"
                   checked={!permanent}
-                  disabled={loading || saving || !canDelete}
+                  disabled={loading || saving || !canRename}
                 />
-                <label htmlFor="page-rename-input">Переименовать</label>
+                <label htmlFor="page-rename-input">Переименовать{!canRename && ' (недоступно)'}</label>
               </td>
             </tr>
             <tr>

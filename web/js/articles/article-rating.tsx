@@ -14,6 +14,7 @@ interface Props {
   pageId: string
   rating: number
   canEdit: boolean
+  canResetVotes: boolean
   onClose: () => void
 }
 
@@ -94,7 +95,7 @@ const Styles = styled.div<{ loading?: boolean }>`
   }
 `
 
-const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdit, onClose: onCloseDelegate }) => {
+const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdit, canResetVotes, onClose: onCloseDelegate }) => {
   const [loading, setLoading] = useState(false)
   const [rating, setRating] = useState(originalRating)
   const [mode, setMode] = useState<RatingMode>('disabled')
@@ -114,7 +115,7 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
 
   const loadRating = useConstCallback(async () => {
     setLoading(true)
-    setError(undefined)
+    setError('')
     try {
       const rating = await fetchPageVotes(pageId)
       setVotes(rating.votes)
@@ -137,7 +138,7 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
 
   const onClearRating = useConstCallback(async () => {
     setLoading(true)
-    setError(undefined)
+    setError('')
     setDeleting(false)
     try {
       const rating = await deleteArticleVotes(pageId)
@@ -169,7 +170,7 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     onClose(null)
   })
 
@@ -315,7 +316,7 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
     return (
       <div>
         {ratingElement}
-        {canEdit && (
+        {canResetVotes && (
           <>
             <br />
             <button className="w-rating-clear-rating-button" onClick={onAskClearRating}>
@@ -350,8 +351,15 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
     )
   })
 
+  interface VotesGroup {
+    name: string
+    index: number
+    votes: ModuleRateVote[]
+    isUngrouped: boolean
+  }
+
   const sortVotes = useConstCallback((votes: ModuleRateVote[]) => {
-    const groups: Array<{ name: string; index: number; votes: ModuleRateVote[]; isUngrouped: boolean }> = []
+    const groups: Array<VotesGroup> = []
     votes.forEach(vote => {
       if (vote.visualGroup) {
         const existingGroup = groups.find(x => x.name === vote.visualGroup)
@@ -372,21 +380,12 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
       if (a.index > b.index) return 1
       return a.name.localeCompare(b.name)
     })
-    const editorVotes = votes.filter(x => !x.visualGroup && x.user.editor)
-    const readerVotes = votes.filter(x => !x.visualGroup && !x.user.editor)
-    if (editorVotes.length) {
+    const otherVotes = votes.filter(x => !x.visualGroup)
+    if (otherVotes.length) {
       groups.push({
-        name: 'Голоса участников',
+        name: 'Голоса других пользователей',
         index: -1,
-        votes: editorVotes,
-        isUngrouped: true,
-      })
-    }
-    if (readerVotes.length) {
-      groups.push({
-        name: 'Голоса читателей',
-        index: -1,
-        votes: readerVotes,
+        votes: otherVotes,
         isUngrouped: true,
       })
     }
@@ -443,7 +442,7 @@ const ArticleRating: React.FC<Props> = ({ pageId, rating: originalRating, canEdi
       </span>
       <div id="who-rated-page-area" className={`${loading ? 'loading' : ''}`}>
         {loading && <Loader className="loader" />}
-        {sortVotes(votes).map((group, i) => (
+        {sortVotes(votes).map((group: VotesGroup, i: number) => (
           <React.Fragment key={i}>
             <h2>
               {group.name} ({renderCombinedVoteRating(group.votes)})

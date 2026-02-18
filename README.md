@@ -43,7 +43,7 @@ You can change it with given environment variables.
 
 To start working, the following objects are required:
 
-- Minimally one website record (for localhost)
+- Website record (for localhost)
 - Some pages (such as `nav:top` or `nav:side`) that are critical for proper appearance 
 
 You can provision these basic structures by running the following commands:
@@ -55,28 +55,26 @@ You can provision these basic structures by running the following commands:
 
 ### Requirements (tested with):
 
-- Docker 20.10.14
-- Docker-Compose 1.29.2
+- Docker 28.4.0
+- Docker Compose 2.39.4
 
 ### Getting started
 
 To start the project, use:
 
-- `docker-compose up`
+- `docker compose up`
 
 To completely delete all data, use:
 
-- `docker-compose down`
+- `docker compose down`
 - `rm -rf ./files ./archive ./postgresql`
 
 To create users, sites and seed inside the database, start the project and afterwards use syntax such as this:
 
-- `docker exec -it scpdev_web python manage.py createsite -s scp-ru -d localhost -t "SCP Foundation" -H "Russian branch"`
-- `docker exec -it scpdev_web seed`
+- `docker exec -it scpdev-web-1 python manage.py createsite -s scp-ru -d localhost -t "SCP Foundation" -H "Russian branch"`
+- `docker exec -it scpdev-web-1 seed`
 
 To update current app that is running, do:
 
-- `docker-compose up -d --no-deps --build web`
-
-Note: in more recent versions, you may want to use `docker compose` instead of `docker-compose`.
+- `docker compose up -d --no-deps --build web`
 

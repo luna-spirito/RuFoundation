@@ -1,5 +1,3 @@
-from typing import Optional
-
 import json
 import urllib.parse
 import math
@@ -15,9 +13,10 @@ from web.controllers import articles
 from web.models.users import User
 from web.models.articles import Article, ArticleLogEntry
 from web.models.settings import Settings
-from django.db.models import Q, Value as V, F, Count, Sum, Avg, Case, When, CharField, IntegerField, FloatField
-from django.db.models.functions import Concat, Random, Coalesce, Round, Cast
+from django.db.models import Q, Value as V, F, Count, Sum, Avg, Case, When, IntegerField, FloatField
+from django.db.models.functions import Random, Coalesce, Round, Cast 
 from web import threadvars
+from web.types import _ArticleType
 
 from .params import ListPagesParams
 from . import param
@@ -61,7 +60,7 @@ def render_var(var, page_vars, page):
             return page_vars['updated_at']
     return None
 
-def get_page_vars(page: Article):
+def get_page_vars(page: _ArticleType)-> dict[str, str] | LazyDict:
     if page is None:
         return dict()
 
@@ -77,9 +76,26 @@ def get_page_vars(page: Article):
             updated_by = articles.get_latest_log_entry(page).user
 
         return updated_by
-
-    _, votes, popularity, _ = articles.get_rating(page)
     
+    rating_cache = {}
+    def get_rating(key: str):
+        nonlocal rating_cache
+        if not rating_cache:
+            _, votes, popularity, _ = articles.get_rating(page)
+            rating_cache['votes'] = votes
+            rating_cache['popularity'] = popularity
+        return rating_cache[key]
+    
+    authors = []
+    def get_authors():
+        nonlocal authors
+        if not authors:
+            authors = [author for author in page.authors.all()]
+        return authors
+    
+    get_created_by_linked = lambda plain: lambda: ' '.join((f'[[{'*'*(not plain)}user %s]]' % author.username) if author and 'username' in author.__dict__ else render_user_to_text(author) for author in get_authors())
+    get_updated_by_linked = lambda plain: lambda: (f'[[{'*'*(not plain)}user %s]]' % get_updated_by().username) if get_updated_by() and 'username' in get_updated_by().__dict__ else render_user_to_text(get_updated_by())
+
     page_vars = LazyDict({
         'name': lambda: page.name,
         'category': lambda: page.category,
@@ -89,14 +105,17 @@ def get_page_vars(page: Article):
         'link': lambda: '/%s' % page.title,  # temporary, must be full page URL based on hostname
         'content': lambda: articles.get_latest_source(page),
         'rating': lambda: articles.get_formatted_rating(page),
-        'rating_votes': lambda: str(votes),
+        'rating_votes': lambda: str(get_rating('votes')),
         'current_user_voted': lambda: 'True' if page.votes.filter(user=current_user).exists() else 'False',
-        'popularity': lambda: str(popularity),
+        'popularity': lambda: str(get_rating('popularity')),
         'revisions': lambda: str(len(ArticleLogEntry.objects.filter(article=page))),
-        'created_by': lambda: render_user_to_text(page.author),
-        'created_by_linked': lambda: ('[[*user %s]]' % page.author.username) if page.author and 'username' in page.author.__dict__ else render_user_to_text(page.author),
+        'created_by': lambda: ' '.join([f'[[span]]{render_user_to_text(author)}[[/span]]' for author in get_authors()]),
+        'created_by_linked': get_created_by_linked(False),
+        'created_by_linked_plain': get_created_by_linked(True),
         'updated_by': lambda: render_user_to_text(get_updated_by()),
-        'updated_by_linked': lambda: ('[[*user %s]]' % get_updated_by().username) if get_updated_by() and 'username' in get_updated_by().__dict__ else render_user_to_text(get_updated_by()),
+        'updated_by_linked': get_updated_by_linked(False),
+        'updated_by_linked_plain': get_updated_by_linked(True),
+        'authors_count': lambda: str(len(get_authors())),
         # content{n} = content sections are not supported yet
         # preview and preview(n) = first characters of the page are not supported yet
         # summary = wtf is this?
@@ -109,7 +128,7 @@ def get_page_vars(page: Article):
         # commented_at, commented_by, commented_by_unix, commented_by_id, commented_by_linked = not yet
     })
 
-    if page.parent_id is not None:
+    if page.parent_id is not None: # type: ignore
         page_vars['parent_name'] = lambda: page.parent.name
         page_vars['parent_category'] = lambda: page.parent.category
         page_vars['parent_fullname'] = lambda: articles.get_full_name(page.parent)
@@ -129,7 +148,7 @@ def page_to_listpages_vars(page: Article, template, index, total, page_vars=None
     return template
 
 
-def query_pages(article, params, viewer=None, path_params=None, allow_pagination=True, always_query=False):
+def query_pages(article: Article, params: dict[str, str], viewer=None, path_params=None, allow_pagination=True, always_query=False):
     if path_params is None:
         path_params = {}
 
@@ -143,6 +162,8 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
 
     parsed_params = ListPagesParams(article, viewer, params, path_params)
 
+    hidden_categories = articles.get_hidden_categories_for(viewer)
+
     if not parsed_params.is_valid():
         if always_query:
             return Article.objects.none(), 0, 1, 1, 0
@@ -151,23 +172,28 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
     article_param = parsed_params.get_type(param.Article)
     if article_param:
         if always_query:
-            q = Article.objects.filter(id=article_param[0].article.id)
-            return q, 0, 1, 1, 1
-        return [article_param[0].article], 0, 1, 1, 1
+            q = Article.objects.filter(id=article_param[0].article.pk).exclude(category__in=hidden_categories)
+            return q, 0, 1, 1, q.count()
+        a = article_param[0].article
+        if a.category in hidden_categories:
+            return [], 0, 1, 1, 0
+        else:
+            return [a], 0, 1, 1, 1
 
     full_name_param = parsed_params.get_type(param.FullName)
     if full_name_param:
         if always_query:
             category, name = articles.get_name(full_name_param)
-            q = Article.objects.filter(category__iexact=category, name__iexact=name)
+            q = Article.objects.filter(category=category, name=name).exclude(category__in=hidden_categories)
             return q, 0, 1, 1, int(q.count() > 0)
         article = articles.get_article(full_name_param[0].full_name)
-        if article:
+        if article and article.category not in hidden_categories:
             return [article], 0, 1, 1, 1
         else:
             return [], 0, 1, 1, 0
 
     prefetch_related = []
+    select_related = []
 
     has_rating = parsed_params.has_type(param.Rating)
     has_votes = parsed_params.has_type(param.Votes)
@@ -194,9 +220,11 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
         prefetch_related.append('tags')
 
     if has_parent:
-        prefetch_related.append('parent')
+        select_related.append('parent')
 
-    q = Article.objects.prefetch_related(*prefetch_related).distinct()
+    q = Article.objects.select_related(*select_related)
+    q = q.prefetch_related(*prefetch_related).distinct()
+    q = q.exclude(category__in=hidden_categories)
 
     # detect required annotations and annotate if needed
     if has_votes:
@@ -210,7 +238,7 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
 
         rating_func = F('id')
 
-        obj_settings = Article(name='_tmp', category=requested_category or '_default').get_settings()
+        obj_settings = Article(name='_tmp', category=requested_category or '_default').settings
         popularity_filter = V(True)
         if obj_settings.rating_mode == Settings.RatingMode.UpDown:
             rating_func = Coalesce(Sum('votes__rate'), 0)
@@ -265,7 +293,7 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
             case param.NotParent(parent=parent):
                 q = q.filter(~Q(parent=parent))
             case param.CreatedBy(user=user):
-                q = q.filter(author=user)
+                q = q.filter(authors=user)
             # ---- start CreatedAt
             case param.CreatedAt(type='range', start=start, end=end):
                 q = q.filter(created_at__gte=start, created_at__lte=end)
@@ -325,11 +353,11 @@ def query_pages(article, params, viewer=None, path_params=None, allow_pagination
             case param.Sort(column=column, direction=direction):
                 allowed_sort_columns = {
                     'created_at': F('created_at'),
-                    'created_by': F('author'),
+                    'created_by': F('authors__username'),
                     'name': F('name'),
                     'title': F('title'),
                     'updated_at': F('updated_at'),
-                    'fullname': Concat('category', V(':'), 'name', output_field=CharField()),
+                    'fullname': F('complete_full_name'),
                     'rating': F('rating'),
                     'votes': F('num_votes'),
                     'popularity': F('popularity'),

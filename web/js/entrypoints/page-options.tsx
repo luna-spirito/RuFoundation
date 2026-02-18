@@ -1,9 +1,9 @@
-import * as React from 'react'
-import { useEffect, useState } from 'react'
-import * as ReactDOM from 'react-dom'
+import React, { useEffect, useState } from 'react'
+import ReactDOM from 'react-dom'
 import { sprintf } from 'sprintf-js'
 import { NotificationSubscriptionData, subscribeToNotifications, unsubscribeFromNotifications } from '../api/notifications'
 import { RatingMode } from '../api/rate'
+import ArticleAuthorship from '../articles/article-authorship'
 import ArticleBacklinksView from '../articles/article-backlinks'
 import ArticleChild from '../articles/article-child'
 import ArticleDelete from '../articles/article-delete'
@@ -20,10 +20,11 @@ import useConstCallback from '../util/const-callback'
 import WikidotModal from '../util/wikidot-modal'
 
 interface Props {
-  pageId?: string
+  pageId: string
   optionsEnabled?: boolean
   editable?: boolean
   lockable?: boolean
+  tagable?: boolean
   rating?: number
   ratingVotes?: number
   ratingMode?: RatingMode
@@ -31,11 +32,18 @@ interface Props {
   canRate?: boolean
   canDelete?: boolean
   canComment?: boolean
+  canViewComments?: boolean
   commentThread?: string
   commentCount?: number
   canCreateTags?: boolean
+  canManageFiles?: boolean
+  canRename?: boolean
+  canCreateHere?: boolean
+  canManageAuthors?: boolean
+  canResetVotes?: boolean
   canWatch?: boolean
   isWatching?: boolean
+  preferences?: { [key: string]: any }
 }
 
 type SubViewType =
@@ -51,6 +59,7 @@ type SubViewType =
   | 'files'
   | 'delete'
   | 'backlinks'
+  | 'authorship'
   | null
 
 const PageOptions: React.FC<Props> = ({
@@ -58,6 +67,7 @@ const PageOptions: React.FC<Props> = ({
   optionsEnabled,
   editable,
   lockable,
+  tagable,
   rating,
   ratingVotes,
   ratingMode,
@@ -65,11 +75,18 @@ const PageOptions: React.FC<Props> = ({
   canRate,
   canDelete,
   canComment,
+  canViewComments,
   commentThread,
   commentCount,
   canCreateTags,
+  canManageFiles,
+  canRename,
+  canCreateHere,
+  canManageAuthors,
+  canResetVotes,
   canWatch,
   isWatching,
+  preferences,
 }: Props) => {
   const [subView, setSubView] = useState<SubViewType>(null)
   const [extOptions, setExtOptions] = useState(false)
@@ -89,7 +106,7 @@ const PageOptions: React.FC<Props> = ({
         setIsNewEditor(true)
       }
     }
-    if (pathParams['edit']) (window as any)._openNewEditor()
+    if (pathParams?.['edit']) (window as any)._openNewEditor()
   }, [])
 
   const onEdit = useConstCallback(e => {
@@ -208,6 +225,15 @@ const PageOptions: React.FC<Props> = ({
     })
   })
 
+  const onAuthorship = useConstCallback(e => {
+    e.preventDefault()
+    e.stopPropagation()
+    setSubView('authorship')
+    setTimeout(() => {
+      window.scrollTo(window.scrollX, document.body.scrollHeight)
+    })
+  })
+
   const onWatch = useConstCallback(e => {
     e.preventDefault()
     e.stopPropagation()
@@ -215,7 +241,7 @@ const PageOptions: React.FC<Props> = ({
     let request: NotificationSubscriptionData = {}
 
     if (e.target.id === 'watchPage') request = { pageId }
-    else if (e.target.id === 'watchThread') request = { forumThreadId: +pathParams.t }
+    else if (e.target.id === 'watchThread') request = { forumThreadId: +(pathParams?.t ?? '-1') }
 
     const action = isNowWatching ? unsubscribeFromNotifications : subscribeToNotifications
 
@@ -256,7 +282,7 @@ const PageOptions: React.FC<Props> = ({
   })
 
   const renderSubView = useConstCallback(() => {
-    return ReactDOM.createPortal(pickSubView(), document.getElementById('action-area'))
+    return ReactDOM.createPortal(pickSubView(), document.getElementById('action-area')!)
   })
 
   const pickSubView = useConstCallback(() => {
@@ -266,14 +292,24 @@ const PageOptions: React.FC<Props> = ({
           <ArticleEditor
             pageId={pageId}
             pathParams={pathParams}
+            useAdvancedEditor={preferences?.['qol__advanced_source_editor_enabled'] === true}
             onClose={onCancelSubView}
-            previewTitleElement={document.getElementById('page-title')}
-            previewBodyElement={document.getElementById('page-content')}
+            previewTitleElement={document.getElementById('page-title') ?? undefined}
+            previewBodyElement={document.getElementById('page-content') ?? undefined}
+            previewStyleElement={document.getElementById('computed-style') ?? undefined}
           />
         )
 
       case 'rating':
-        return <ArticleRating pageId={pageId} rating={rating} canEdit={editable} onClose={onCancelSubView} />
+        return (
+          <ArticleRating
+            pageId={pageId}
+            rating={rating ?? 0}
+            canEdit={Boolean(editable)}
+            canResetVotes={Boolean(canResetVotes)}
+            onClose={onCancelSubView}
+          />
+        )
 
       case 'tags':
         return <ArticleTags pageId={pageId} onClose={onCancelSubView} canCreateTags={canCreateTags} />
@@ -297,13 +333,16 @@ const PageOptions: React.FC<Props> = ({
         return <ArticleRename pageId={pageId} onClose={onCancelSubView} />
 
       case 'files':
-        return <ArticleFiles pageId={pageId} onClose={onCancelSubView} editable={editable} />
+        return <ArticleFiles pageId={pageId} onClose={onCancelSubView} editable={Boolean(canManageFiles)} />
 
       case 'delete':
-        return <ArticleDelete pageId={pageId} canDelete={canDelete} onClose={onCancelSubView} />
+        return <ArticleDelete pageId={pageId} canDelete={canDelete} canRename={canRename} onClose={onCancelSubView} />
 
       case 'backlinks':
         return <ArticleBacklinksView pageId={pageId} onClose={onCancelSubView} />
+
+      case 'authorship':
+        return <ArticleAuthorship user={null} pageId={pageId} onClose={onCancelSubView} editable={canManageAuthors} />
 
       default:
         return null
@@ -316,9 +355,10 @@ const PageOptions: React.FC<Props> = ({
         pageId={pageId}
         isNew
         pathParams={pathParams}
+        useAdvancedEditor={preferences?.['qol__advanced_source_editor_enabled'] === true}
         onClose={onCancelSubView}
-        previewTitleElement={document.getElementById('page-title')}
-        previewBodyElement={document.getElementById('page-content')}
+        previewTitleElement={document.getElementById('page-title') ?? undefined}
+        previewBodyElement={document.getElementById('page-content') ?? undefined}
       />
     )
   }
@@ -361,17 +401,19 @@ const PageOptions: React.FC<Props> = ({
             Редактировать
           </a>
         )}
-        <a id="pagerate-button" className="btn btn-default" href="#" onClick={onRate}>
-          {canRate ? 'Оценить' : 'Оценки'} ({renderRating()})
-        </a>
-        {editable && (
+        {ratingMode != 'disabled' && (
+          <a id="pagerate-button" className="btn btn-default" href="#" onClick={onRate}>
+            {canRate ? 'Оценить' : 'Оценки'}&nbsp;({renderRating()})
+          </a>
+        )}
+        {tagable && (
           <a id="tags-button" className="btn btn-default" href="#" onClick={onTags}>
             Теги
           </a>
         )}
-        {canComment && (
+        {canViewComments && (
           <a id="discuss-button" className="btn btn-default" href={commentThread || '/forum/start'}>
-            Обсудить ({commentCount || 0})
+            {canComment ? 'Обсудить' : 'Обсуждение'}&nbsp;({commentCount || 0})
           </a>
         )}
         <a id="history-button" className="btn btn-default" href="#" onClick={onHistory}>
@@ -381,7 +423,7 @@ const PageOptions: React.FC<Props> = ({
           Файлы
         </a>
         <a id="more-options-button" className="btn btn-default" href="#" onClick={toggleExtOptions}>
-          {extOptions ? '- Опции' : '+ Опции'}
+          {extOptions ? '-' : '+'}&nbsp;{'Опции'}
         </a>
       </div>
       {extOptions && (
@@ -390,29 +432,32 @@ const PageOptions: React.FC<Props> = ({
             Обратные ссылки
           </a>
           <a id="view-source-button" className="btn btn-default" href="#" onClick={onSource}>
-            Исходник страницы
+            Исходник
+          </a>
+          <a id="view-authorship-button" className="btn btn-default" href="#" onClick={onAuthorship}>
+            Авторство
           </a>
           {editable && (
             <a id="parent-page-button" className="btn btn-default" href="#" onClick={onParent}>
               Родитель
             </a>
           )}
-          {editable && (
+          {canCreateHere && (
             <a id="child-page-button" className="btn btn-default" href="#" onClick={onChild}>
               Создать дочернюю страницу
             </a>
           )}
           {lockable && (
             <a id="page-block-button" className="btn btn-default" href="#" onClick={onLock}>
-              Заблокировать страницу
+              Заблокировать
             </a>
           )}
-          {editable && (
+          {canRename && (
             <a id="rename-move-button" className="btn btn-default" href="#" onClick={onRename}>
               Переименовать
             </a>
           )}
-          {editable && (
+          {(canRename || canDelete) && (
             <a id="delete-button" className="btn btn-default" href="#" onClick={onDelete}>
               Удалить
             </a>

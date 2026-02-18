@@ -1,17 +1,19 @@
 import { wFetch } from '../util/fetch-util'
-import { ModuleRateVotesResponse } from './rate'
+import { ModuleRateVotesResponse, RatingMode } from './rate'
 import { UserData } from './user'
 
 export interface ArticleData {
   pageId: string
   title?: string
   source?: string
-  tags?: Array<string>
+  tags?: string[]
+  authors?: UserData[]
   parent?: string
   locked?: boolean
 }
 
 export interface ArticleUpdateRequest extends ArticleData {
+  authorsIds?: number[]
   forcePageId?: boolean
 }
 
@@ -19,42 +21,29 @@ export async function createArticle(data: ArticleData) {
   await wFetch(`/api/articles/new`, { method: 'POST', sendJson: true, body: data })
 }
 
-export interface CromUserData {
-  type: string
-  id: number
-  avatar: string | null
-  name: string
-  username: string
-  showAvatar: boolean
-  staff: boolean
-  admin: boolean
-  editor: boolean
-  visualGroup: string | null
-  visualGroupIndex: number | null
-}
-
-export interface CromPageRating {
+export interface FullArticleRating {
   value: number
+  mode: RatingMode
   votes: number
   popularity: number
-  mode: 'stars' | 'updown' | 'disabled'
 }
 
-export interface CromArticleData {
+export interface FullArticleData {
   uid: number
   pageId: string
   title: string
   canonicalUrl: string
   createdAt: string
   updatedAt: string
-  createdBy: CromUserData
-  updatedBy: CromUserData
-  rating: string
+  createdBy: UserData
+  authors: UserData[]
+  updatedBy: UserData
+  rating: FullArticleRating
   tags: string[]
 }
 
-export function fetchAllArticles(): Promise<CromArticleData[]> {
-  return wFetch<CromArticleData[]>('/api/articles')
+export function fetchAllArticles(): Promise<FullArticleData[]> {
+  return wFetch<FullArticleData[]>('/api/articles')
 }
 
 export function fetchArticle(pageId: string): Promise<ArticleData> {
@@ -73,6 +62,7 @@ export interface ArticleLogEntry {
   revNumber: number
   user: UserData
   comment: string
+  defaultComment: string
   createdAt: string
   type: string
   meta: Record<string, any>
@@ -97,7 +87,8 @@ export interface ArticleVersion {
 }
 
 export async function fetchArticleVersion(pageId: string, revNum: number, pathParams?: { [key: string]: string }): Promise<ArticleVersion> {
-  return await wFetch<ArticleVersion>(`/api/articles/${pageId}/version?revNum=${revNum}&pathParams=${JSON.stringify(pathParams)}`)
+  const urlPathParams = pathParams && `&pathParams=${JSON.stringify(pathParams ?? {})}`
+  return await wFetch<ArticleVersion>(`/api/articles/${pageId}/version?revNum=${revNum}${urlPathParams}`)
 }
 
 export interface ArticleBacklink {

@@ -25,7 +25,12 @@ def remap_field(obj, fi, in_range):
     obj[fi] = remapped(obj[fi], in_range)
 
 def remap_list(obj, fi, in_range):
-  obj[fi] = list(map(lambda x: remapped(x, in_range), obj[fi]))
+  if fi in obj:
+    obj[fi] = list(map(lambda x: remapped(x, in_range), obj[fi]))
+
+def remap_named_list(obj, fi, in_range):
+  if fi in obj:
+    obj[fi] = list(map(lambda x: { "name": x["name"], "id": remapped(x["id"], in_range) }, obj[fi]))
 
 # scheme = {}
 # for item in data:
@@ -82,7 +87,24 @@ for item in data:
   fields = item["fields"]
 
   if model_name == "web.articlelogentry":
-    remap_field(fields["meta"], "version_id", in_range)
+    meta = fields["meta"]
+    remap_field(meta, "id", True)
+    remap_field(meta, "version_id", True)
+    if "files" in meta:
+      for filegroup_name in meta["files"]:
+        remap_named_list(meta["files"], filegroup_name, True)
+    if "tags" in meta:
+      for filegroup_name in meta["tags"]:
+        remap_list(meta["tags"], filegroup_name, True)
+    if "source" in meta:
+      remap_field(meta["source"], "version_id", True)
+    remap_named_list(meta, "added_tags", True)
+    remap_named_list(meta, "removed_tags", True)
+    remap_field(meta, "parent_id", True)
+    remap_field(meta, "prev_parent_id", True)
+    if "votes" in meta:
+      meta["votes"] = list(map(lambda x: { "date": x["date"], "user_id": remapped(x["user_id"], True), "visual_group_id": remapped(x["visual_group_id"], True), "vote": x["vote"] }, meta["votes"]))
+    
   for field in to_remap_fields[model_name]:
     remap_field(fields, field, in_range)
   if model_name in to_remap_lists:

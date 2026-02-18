@@ -1,7 +1,7 @@
-import { wFetch } from "../util/fetch-util"
+import { wFetch } from '../util/fetch-util'
 
 export interface UserData {
-  type: 'system' | 'anonymous' | 'user' | 'wikidot'
+  type: 'system' | 'anonymous' | 'bot' | 'normal' | 'wikidot'
   id?: number
   avatar?: string
   name: string
@@ -10,10 +10,21 @@ export interface UserData {
   editor?: boolean
   staff?: boolean
   admin?: boolean
-  visualGroup?: string
-  visualGroupIndex?: number
+  roles?: string
 }
 
 export function fetchAllUsers(): Promise<UserData[]> {
   return wFetch<UserData[]>('/api/users')
+}
+
+export interface AdminSusUser {
+  user: {
+    id: number
+    name: string
+  }
+  ip: string
+}
+
+export function fetchAdminSusUsers(): Promise<AdminSusUser[]> {
+  return wFetch<AdminSusUser[]>('/api/admin/sus')
 }

@@ -1,10 +1,11 @@
 from django.contrib.auth.models import AnonymousUser
 
+from renderer.utils import UserJSON, render_user_to_json, render_template_from_string
+
 from web.controllers.articles import get_rating, Vote
 from web.models.settings import Settings
-from web.controllers import articles, permissions
-
-from renderer.utils import render_user_to_json, render_template_from_string
+from web.controllers import articles
+from web.util.pydantic import JSONInterface, drop_nones
 
 from . import ModuleError
 from ._csrf_protection import csrf_safe_method
@@ -64,21 +65,31 @@ def api_get_rating(context, _params):
     return {'pageId': context.article.full_name, 'rating': rating, 'voteCount': votes, 'popularity': popularity, 'ratingMode': mode}
 
 
+@drop_nones(['date'])
+class RenderedVoteJSON(JSONInterface):
+    user: UserJSON
+    value: float
+    visualGroup: str | None=None
+    visualGroupIndex: int | None=None
+    date: str | None=None
+
+
 @csrf_safe_method
 def api_get_votes(context, _params):
     if not context.article:
         raise ModuleError('Страница не указана')
     votes = []
     rating, _, popularity, mode = articles.get_rating(context.article)
+    can_view_votes_timestamp = context.user.has_perm('roles.view_votes_timestamp')
     for db_vote in Vote.objects.filter(article=context.article).order_by('-date', '-user__username'):
-        rendered_vote = {
-            'user': render_user_to_json(db_vote.user),
-            'value': db_vote.rate,
-            'visualGroup': db_vote.visual_group.name if db_vote.visual_group else None,
-            'visualGroupIndex': db_vote.visual_group.index if db_vote.visual_group else None
-        }
-        if context.user.is_staff or context.user.is_superuser:
-            rendered_vote['date'] = db_vote.date.isoformat() if db_vote.date else None
+        rendered_vote = RenderedVoteJSON(
+            user=render_user_to_json(db_vote.user),
+            value=db_vote.rate,
+            visualGroup=(db_vote.role.votes_title or db_vote.role.name or db_vote.role.slug) if db_vote.role else None,
+            visualGroupIndex=db_vote.role.index if db_vote.role else None
+        )
+        if can_view_votes_timestamp:
+            rendered_vote.date = db_vote.date.isoformat() if db_vote.date else None
         votes.append(rendered_vote)
     return {'pageId': context.article.full_name, 'votes': votes, 'rating': rating, 'popularity': popularity, 'mode': mode}
 
@@ -107,7 +118,7 @@ def api_rate(context, params):
     if not context.article:
         raise ModuleError('Страница не указана')
 
-    if not permissions.check(context.user, "rate", context.article):
+    if not context.user.has_perm('roles.rate_articles', context.article):
         raise ModuleError('Недостаточно прав')
 
     if 'value' not in params:
@@ -116,12 +127,12 @@ def api_rate(context, params):
     value = params['value']
 
     if value is not None:
-        obj_settings = context.article.get_settings()
+        obj_settings = context.article.settings
         if obj_settings.rating_mode == Settings.RatingMode.UpDown:
             if value not in [-1, 0, 1]:
                 raise ModuleError('Некорректная оценка %s' % str(value))
         elif obj_settings.rating_mode == Settings.RatingMode.Stars:
-            if value < 0 or value > 5:
+            if value < 0 or value > 5 or value % 0.5 != 0:
                 raise ModuleError('Некорректная оценка %s' % str(value))
 
     try:

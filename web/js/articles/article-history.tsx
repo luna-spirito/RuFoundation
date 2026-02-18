@@ -71,7 +71,7 @@ const Styles = styled.div<{ loading?: boolean }>`
 `
 
 export function renderArticleHistoryFlags(entry: ArticleLogEntry) {
-  const renderType = type => {
+  const renderType = (type: string) => {
     switch (type) {
       case 'new':
         return (
@@ -153,7 +153,7 @@ export function renderArticleHistoryFlags(entry: ArticleLogEntry) {
   }
 
   if (entry.meta.subtypes) {
-    return entry.meta.subtypes.map(x => <React.Fragment key={x}>{renderType(x)}</React.Fragment>)
+    return entry.meta.subtypes.map((x: any) => <React.Fragment key={x}>{renderType(x)}</React.Fragment>)
   } else {
     return renderType(entry.type)
   }
@@ -163,6 +163,8 @@ export function renderArticleHistoryComment(entry: ArticleLogEntry) {
   if (entry.comment.trim()) {
     return entry.comment
   }
+  return entry.defaultComment
+
   switch (entry.type) {
     case 'new':
       return 'Создание новой страницы'
@@ -182,8 +184,8 @@ export function renderArticleHistoryComment(entry: ArticleLogEntry) {
       )
 
     case 'tags':
-      let added_tags = entry.meta.added_tags.map(tag => tag['name'])
-      let removed_tags = entry.meta.removed_tags.map(tag => tag['name'])
+      let added_tags = entry.meta.added_tags.map((tag: any) => tag['name'])
+      let removed_tags = entry.meta.removed_tags.map((tag: any) => tag['name'])
       if (Array.isArray(added_tags) && added_tags.length && Array.isArray(removed_tags) && removed_tags.length) {
         return (
           <>
@@ -254,6 +256,22 @@ export function renderArticleHistoryComment(entry: ArticleLogEntry) {
       )
     }
 
+    case 'authorship': {
+      let added_authors = entry.meta.added_authors
+      let removed_authors = entry.meta.removed_authors
+      if (Array.isArray(added_authors) && added_authors.length && Array.isArray(removed_authors) && removed_authors.length) {
+        return (
+          <>
+            Добавлены авторы: {added_authors.join(', ')}. Удалены авторы: {removed_authors.join(', ')}.
+          </>
+        )
+      } else if (Array.isArray(added_authors) && added_authors.length) {
+        return <>Добавлены авторы: {added_authors.join(', ')}.</>
+      } else if (Array.isArray(removed_authors) && removed_authors.length) {
+        return <>Удалены авторы: {removed_authors.join(', ')}.</>
+      }
+    }
+
     case 'revert':
       return <>Откат страницы к версии №{entry.meta.rev_number}</>
   }
@@ -262,11 +280,11 @@ export function renderArticleHistoryComment(entry: ArticleLogEntry) {
 const ArticleHistory: React.FC<Props> = ({ pageId, pathParams, onClose: onCloseDelegate }) => {
   const [loading, setLoading] = useState(false)
   const [entries, setEntries] = useState<Array<ArticleLogEntry>>([])
-  const [subarea, setSubarea] = useState<JSX.Element>()
+  const [subarea, setSubarea] = useState<React.ReactNode>()
   const [entryCount, setEntryCount] = useState(0)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
-  const [error, setError] = useState(0)
+  const [error, setError] = useState('')
   const [fatalError, setFatalError] = useState(false)
   const [firstCompareEntry, setFirstCompareEntry] = useState<ArticleLogEntry>()
   const [secondCompareEntry, setSecondCompareEntry] = useState<ArticleLogEntry>()
@@ -277,7 +295,7 @@ const ArticleHistory: React.FC<Props> = ({ pageId, pathParams, onClose: onCloseD
 
   const loadHistory = useConstCallback(async (nextPage?: number) => {
     setLoading(true)
-    setError(undefined)
+    setError('')
 
     const realPage = nextPage || page
     const from = (realPage - 1) * perPage
@@ -309,7 +327,7 @@ const ArticleHistory: React.FC<Props> = ({ pageId, pathParams, onClose: onCloseD
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     if (fatalError) {
       onClose(null)
     }
@@ -354,7 +372,7 @@ const ArticleHistory: React.FC<Props> = ({ pageId, pathParams, onClose: onCloseD
 
     fetchArticleVersion(pageId, entry.revNumber, pathParams).then(function (resp) {
       showVersionMessage(entry.revNumber, new Date(entry.createdAt), entry.user, pageId)
-      document.getElementById('page-content').innerHTML = resp.rendered
+      document.getElementById('page-content')!.innerHTML = resp.rendered
     })
   })
 
@@ -386,7 +404,7 @@ const ArticleHistory: React.FC<Props> = ({ pageId, pathParams, onClose: onCloseD
     }
   })
 
-  const showSubArea = useConstCallback((component: JSX.Element) => {
+  const showSubArea = useConstCallback((component: React.ReactNode) => {
     setSubarea(component)
   })
 

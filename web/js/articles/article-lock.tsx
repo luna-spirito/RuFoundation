@@ -47,7 +47,7 @@ const ArticleLock: React.FC<Props> = ({ pageId, isNew, onClose }) => {
     setLoading(true)
     fetchArticle(pageId)
       .then(data => {
-        setLocked(data.locked)
+        setLocked(Boolean(data.locked))
       })
       .catch(e => {
         setFatalError(true)
@@ -65,7 +65,7 @@ const ArticleLock: React.FC<Props> = ({ pageId, isNew, onClose }) => {
     }
 
     setSaving(true)
-    setError(null)
+    setError('')
     setSavingSuccess(false)
 
     const input = {
@@ -76,6 +76,7 @@ const ArticleLock: React.FC<Props> = ({ pageId, isNew, onClose }) => {
     try {
       await updateArticle(pageId, input)
       setSavingSuccess(true)
+      setSaving(false)
       await sleep(1000)
       setSavingSuccess(false)
       window.scrollTo(window.scrollX, 0)
@@ -108,7 +109,7 @@ const ArticleLock: React.FC<Props> = ({ pageId, isNew, onClose }) => {
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(null)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }

@@ -5,8 +5,24 @@
 {% endblock %}
 
 {% block h1 %}
+    <style>
+        a.manage-user {
+            color: unset;
+            text-decoration: unset;
+        }
+        a.manage-user:hover {
+            color: #ff5f5f;
+            text-decoration: underline;
+            background-color: transparent;
+        }
+    </style>
+
     <img class="system-heading-avatar" src="{{ avatar }}" alt="{{ displayname }}">
-    {{ displayname }}
+    {% if can_manage_users %}
+        <a class="manage-user" href="{{ manage_url }}" target="_blank">{{ displayname }}</a>
+    {% else %}
+        {{ displayname }}
+    {% endif %}
     {% if subtitle %}
         <div class="user-heading-subtitle">
             {{ subtitle }}
@@ -21,7 +37,7 @@
 
 {% block content %}
     <div class="profile-form">
-        {% if object.type == 'wikidot' %}<p><b>Важно:</b> Пользователь мигрирован с платформы Wikidot и не является активным.<br><br></p>{% endif %}
+        {% if object.type == 'wikidot' %}<p><b>Важно:</b> Пользователь перенесен с платформы Wikidot и не является активным.<br><br></p>{% endif %}
         {% if object.type == 'bot' %}<p><b>Важно:</b> Пользователь является ботом.<br><br></p>{% endif %}
         {% if object.first_name %}<p><b>Имя:</b> {{ object.first_name }}</p>{% endif %}
         {% if object.last_name %}<p><b>Фамилия:</b> {{ object.last_name }}</p>{% endif %}

@@ -1,14 +1,16 @@
 import * as React from 'react'
-import styled, { useTheme } from 'styled-components'
+import styled from 'styled-components'
 
-interface Props {
-  size?: number
-  borderSize?: number
-  color?: string
+interface StyledProps {
+  size: number
+  borderSize: number
+  color: string
   className?: string
 }
 
-const LoaderStyle = styled.div<Props>`
+type Props = Partial<StyledProps>
+
+const LoaderStyle = styled.div<StyledProps>`
   @keyframes ldio-rmqiozoxwgk {
     0% {
       transform: translate(-50%, -50%) rotate(0deg);
@@ -46,8 +48,7 @@ const LoaderStyle = styled.div<Props>`
 `
 
 const Loader: React.FC<Props> = ({ className, size, borderSize, color }) => {
-  const theme = useTheme()
-  const defaultColor = theme?.primary || '#e15b64'
+  const defaultColor = '#e15b64'
 
   return (
     <LoaderStyle className={className} size={size || 32} borderSize={borderSize || 4} color={color || defaultColor}>

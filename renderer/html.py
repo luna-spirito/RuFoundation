@@ -52,6 +52,10 @@ def get_html_injected_code(html_id: str) -> str:
     const api = new Proxy({}, apiHandler);
     </script>
     <style>
-      body { margin: 0; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow-y: hidden;
+      }
     </style> 
     """ % json.dumps(html_id)

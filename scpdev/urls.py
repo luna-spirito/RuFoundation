@@ -26,5 +26,12 @@ urlpatterns = [
     path(f"local--code/<page_id>/<int:index>", LocalCodeView.as_view()),
     path(f"local--html/<page_id>/<hash_and_id>", LocalHTMLView.as_view()),
     path(f"local--theme/<page_id>/style.css", LocalThemeView.as_view()),
-    path("", include("web.urls"))
+    path('', include('web.urls'))
 ]
+
+if settings.DEBUG:
+    from debug_toolbar.toolbar import debug_toolbar_urls
+    urlpatterns = [
+        *debug_toolbar_urls(),
+        *urlpatterns
+    ]

@@ -40,7 +40,7 @@ const Styles = styled.div<{ loading?: boolean }>`
   }
 `
 
-const ArticleSource: React.FC<Props> = ({ pageId, onClose: onCloseDeligate, source: originalSource }) => {
+const ArticleSource: React.FC<Props> = ({ pageId, onClose: onCloseDelegate, source: originalSource }) => {
   const [loading, setLoading] = useState(false)
   const [source, setSource] = useState(originalSource)
   const [error, setError] = useState('')
@@ -49,13 +49,19 @@ const ArticleSource: React.FC<Props> = ({ pageId, onClose: onCloseDeligate, sour
     loadSource()
   }, [])
 
+  useEffect(() => {
+    if (originalSource) {
+      setSource(originalSource)
+    }
+  }, [originalSource])
+
   const loadSource = useConstCallback(async () => {
     if (!source) {
       setLoading(true)
-      setError(null)
+      setError('')
       try {
         const article = await fetchArticle(pageId)
-        setError(null)
+        setError('')
         setSource(article.source)
       } catch (e) {
         setError(e.error || 'Ошибка связи с сервером')
@@ -70,11 +76,11 @@ const ArticleSource: React.FC<Props> = ({ pageId, onClose: onCloseDeligate, sour
       e.preventDefault()
       e.stopPropagation()
     }
-    if (onCloseDeligate) onCloseDeligate()
+    onCloseDelegate?.()
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(null)
+    setError('')
     onClose(null)
   })
 

@@ -24,7 +24,7 @@ from django.contrib import admin
 
 from .views import profile, signup, login
 
-from web.views.api import articles, preview, module, files, notifications, users
+from web.views.api import articles, preview, module, files, notifications, users, search
 from web.views.article import ArticleView
 from web.views.reactive import reactive_view
 
@@ -45,6 +45,7 @@ def make_reactive(routes: list[str]):
 
 api_patterns = [
     path('users', users.AllUsersView.as_view()),
+    path('admin/sus', users.AdminSusActivityApiView.as_view()),
     path('articles', articles.AllArticlesView.as_view()),
     path('articles/new', articles.CreateView.as_view()),
     path('articles/<str:full_name>/version', articles.FetchVersionView.as_view()),
@@ -62,6 +63,8 @@ api_patterns = [
 
     path('notifications', notifications.NotificationsView.as_view()),
     path('notifications/subscribe', notifications.NotificationsSubscribeView.as_view()),
+
+    path('search', search.SearchView.as_view())
 ]
 
 
@@ -69,7 +72,8 @@ reactive_pages = [
     'notifications',
     'profile',
     'notifications/all',
-    'notifications/unread'
+    'notifications/unread',
+    'search'
 ]
 
 
@@ -88,6 +92,8 @@ sys_patterns = [
     path("profile/edit", profile.ChangeProfileView.as_view(template_name="profile/change.html"), name="profile_edit"),
 
     path('accept/<uidb64>/<token>', signup.AcceptInvitationView.as_view(), name="accept"),
+
+    re_path(r'^preferences/', include('dynamic_preferences.urls')),
 
     *make_path("admin", admin.site.urls),
     *make_reactive(reactive_pages)

@@ -1,62 +1,27 @@
+import math
 import json
-from functools import reduce
 import operator
+
+from functools import reduce
 
 from django.db.models import Q
 
-from modules.forumthread import get_post_contents
-from modules.listpages import render_pagination, render_date
 from renderer import RenderContext, render_template_from_string, render_user_to_html
-import math
 
-import renderer
+from modules.listpages import render_pagination, render_date
+
+from renderer.utils import render_user_to_text
 from web.models.users import User
-
-from web.controllers import articles
 from web.models.articles import ArticleLogEntry, Article
 from web.models.settings import Settings
+from web.controllers import articles
 
 
 def has_content():
     return False
 
 
-def get_post_info(context, posts, category_for_comments):
-    post_contents = get_post_contents(posts)
-    post_info = []
-
-    for post in posts:
-        thread_url = '/forum/t-%d/%s' % (post.thread.id, articles.normalize_article_name(post.thread.name if post.thread.category_id else post.thread.article.display_name))
-        render_post = {
-            'id': post.id,
-            'name': post.name.strip() or 'Перейти к сообщению',
-            'author': render_user_to_html(post.author),
-            'created_at': render_date(post.created_at),
-            'content': renderer.single_pass_render(post_contents.get(post.id, ('', None))[0], RenderContext(None, None, {}, context.user), 'message'),
-            'url': '%s#post-%d' % (thread_url, post.id),
-            'category': {
-                'id': post.thread.category.id,
-                'name': post.thread.category.name,
-                'section_name': post.thread.category.section.name,
-                'url': '/forum/c-%d/%s' % (post.thread.category.id, articles.normalize_article_name(post.thread.category.name))
-            } if post.thread.category_id else {
-                'id': category_for_comments.id,
-                'name': category_for_comments.name,
-                'section_name': category_for_comments.section.name,
-                'url': '/forum/c-%d/%s' % (category_for_comments.id, articles.normalize_article_name(category_for_comments.name))
-            } if category_for_comments else None,
-            'thread': {
-                'id': post.thread.id,
-                'name': post.thread.name,
-                'url': thread_url
-            }
-        }
-        post_info.append(render_post)
-
-    return post_info
-
-
-def log_entry_type_name(entry: ArticleLogEntry.LogEntryType) -> (str, str):
+def log_entry_type_name(entry: ArticleLogEntry.LogEntryType) -> tuple[str, str]:
     mapping = {
         ArticleLogEntry.LogEntryType.Source: ('S', 'изменился текст статьи'),
         ArticleLogEntry.LogEntryType.Title: ('T', 'изменился заголовок'),
@@ -68,6 +33,7 @@ def log_entry_type_name(entry: ArticleLogEntry.LogEntryType) -> (str, str):
         ArticleLogEntry.LogEntryType.FileDeleted: ('F', 'файл удалён'),
         ArticleLogEntry.LogEntryType.FileRenamed: ('F', 'файл переименован'),
         ArticleLogEntry.LogEntryType.VotesDeleted: ('V', 'голоса изменены'),
+        ArticleLogEntry.LogEntryType.Authorship: ('C', 'авторство изменено'),
         ArticleLogEntry.LogEntryType.Wikidot: ('W', 'правка, портированная с Wikidot')
     }
     return mapping.get(entry, ('?', '?'))
@@ -81,37 +47,36 @@ def log_entry_default_comment(entry: ArticleLogEntry) -> str:
         return 'Создание новой страницы'
 
     if entry.type == ArticleLogEntry.LogEntryType.Title:
-        return 'Заголовок изменён с "%s" на "%s"' % (entry.meta['prev_title'], entry.meta['title'])
+        return f'Заголовок изменён с "{entry.meta['prev_title']}" на "{entry.meta['title']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.Name:
-        return 'Страница переименована из "%s" в "%s"' % (entry.meta['prev_name'], entry.meta['name'])
+        return f'Страница переименована из "{entry.meta['prev_name']}" в "{entry.meta['name']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.Tags:
-        added_tags = map(lambda x: x['name'], entry.meta.get('added_tags', []))
-        removed_tags = map(lambda x: x['name'], entry.meta.get('removed_tags', []))
-        if added_tags and removed_tags:
-            return 'Добавлены теги: %s. Удалены теги: %s.' % (', '.join(added_tags), ', '.join(removed_tags))
-        if added_tags:
-            return 'Добавлены теги: %s.' % ', '.join(added_tags)
-        if removed_tags:
-            return 'Удалены теги: %s.' % ', '.join(removed_tags)
+        added_tags = [x['name'] for x in entry.meta.get('added_tags', [])]
+        removed_tags = [x['name'] for x in entry.meta.get('removed_tags', [])]
+        log = [
+            added_tags and f'Добавлены теги: {', '.join(added_tags)}.',
+            removed_tags and f'Удалены теги: {', '.join(removed_tags)}.'
+        ]
+        return ' '.join(l for l in log if l)
 
     if entry.type == ArticleLogEntry.LogEntryType.Parent:
         if entry.meta['prev_parent'] and entry.meta['parent']:
-            return 'Родительская страница изменена с "%s" на "%s"' % (entry.meta['prev_parent'], entry.meta['parent'])
+            return f'Родительская страница изменена с "{entry.meta['prev_parent']}" на "{entry.meta['parent']}"'
         if entry.meta['prev_parent']:
-            return 'Убрана родительская страница "%s"' % entry.meta['prev_parent']
+            return f'Убрана родительская страница "{entry.meta['prev_parent']}"'
         if entry.meta['parent']:
-            return 'Установлена родительская страница "%s"' % entry.meta['parent']
+            return f'Установлена родительская страница "{entry.meta['parent']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.FileAdded:
-        return 'Загружен файл: "%s"' % entry.meta['name']
+        return f'Загружен файл: "{entry.meta['name']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.FileDeleted:
-        return 'Удалён файл: "%s"' % entry.meta['name']
+        return f'Удалён файл: "{entry.meta['name']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.FileRenamed:
-        return 'Переименован файл: "%s" в "%s"' % (entry.meta['prev_name'], entry.meta['name'])
+        return f'Переименован файл: "{entry.meta['prev_name']}" в "{entry.meta['name']}"'
 
     if entry.type == ArticleLogEntry.LogEntryType.VotesDeleted:
         rating_str = 'n/a'
@@ -119,10 +84,21 @@ def log_entry_default_comment(entry: ArticleLogEntry) -> str:
             rating_str = '%+d' % int(entry.meta['rating'])
         elif entry.meta['rating_mode'] == Settings.RatingMode.Stars:
             rating_str = '%.1f' % float(entry.meta['rating'])
-        return 'Сброшен рейтинг страницы: %s (голосов: %d, популярность: %d%%)' % (rating_str, entry.meta['votes_count'], entry.meta['popularity'])
+        return f'Сброшен рейтинг страницы: {rating_str} (голосов: {entry.meta['votes_count']}, популярность: {entry.meta['popularity']}%)'
+    
+    if entry.type == ArticleLogEntry.LogEntryType.Authorship:
+        added_authors = User.objects.filter(id__in=entry.meta.get('added_authors', []))
+        removed_authors = User.objects.filter(id__in=entry.meta.get('removed_authors', []))
+        added_authors = [render_user_to_text(a) for a in added_authors]
+        removed_authors = [render_user_to_text(a) for a in removed_authors]
+        log = [
+            added_authors and f'Добавлены авторы: {', '.join(added_authors)}.',
+            removed_authors and f'Удалены авторы: {', '.join(removed_authors)}.'
+        ]
+        return ' '.join(l for l in log if l)
 
     if entry.type == ArticleLogEntry.LogEntryType.Revert:
-        return 'Откат страницы к версии №%d' % (entry.meta['rev_number'])
+        return f'Откат страницы к версии №{entry.meta['rev_number']}'
 
     return ''
 
@@ -147,6 +123,9 @@ def render(context: RenderContext, params):
 
     q = ArticleLogEntry.objects.all()
 
+    hidden_categories = articles.get_hidden_categories_for(context.user)
+    q = q.exclude(article__category__in=hidden_categories)
+
     if filter_types:
         q = q.filter(Q(type__in=filter_types) | reduce(operator.or_, (Q(meta__subtypes__contains=x) for x in filter_types)))
 
@@ -166,7 +145,7 @@ def render(context: RenderContext, params):
             if user_name_search in 'system':
                 new_q |= Q(user__isnull=True)
         else:
-            user_q = list(User.objects.filter(Q(username__iexact=user_name_search)|Q(wikidot_username__iexact=user_name_search)))
+            user_q = list(User.objects.filter(Q(username=user_name_search)|Q(wikidot_username=user_name_search)))
             new_q = Q(user__in=user_q)
             if user_name_search == 'system':
                 new_q |= Q(user__isnull=True)
@@ -202,7 +181,7 @@ def render(context: RenderContext, params):
             'article_url': '/%s' % entry.article.full_name
         })
 
-    categories = sorted(Article.objects.distinct('category').values_list('category', flat=True))
+    categories = sorted(Article.objects.distinct('category').exclude(category__in=hidden_categories).values_list('category', flat=True))
 
     type_filter = []
     type_filter_empty = not filter_types

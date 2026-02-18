@@ -1,5 +1,5 @@
-import * as React from 'react'
-import * as ReactDOM from 'react-dom'
+import React from 'react'
+import { renderTo, unmountFromRoot } from '~util/react-render-into'
 import { callModule, ModuleRenderResponse } from '../api/modules'
 import Loader from '../util/loader'
 import { showErrorModal } from '../util/wikidot-modal'
@@ -21,8 +21,8 @@ export function makeForumThread(node: HTMLElement) {
   ;(node as any)._forumthread = true
   // end hack
 
-  const fBasePathParams = JSON.parse(node.dataset.forumThreadPathParams)
-  const fBaseParams = JSON.parse(node.dataset.forumThreadParams)
+  const fBasePathParams = JSON.parse(node.dataset.forumThreadPathParams!)
+  const fBaseParams = JSON.parse(node.dataset.forumThreadParams!)
 
   window.history.replaceState({ forumThread: fBasePathParams.t, forumThreadPage: fBasePathParams.p || '1' }, '')
 
@@ -54,14 +54,14 @@ export function makeForumThread(node: HTMLElement) {
   }
 
   //
-  const switchPage = async (e: MouseEvent, config: SwitchPageConfig) => {
+  const switchPage = async (e: MouseEvent | null, config: SwitchPageConfig) => {
     if (e) {
       e.preventDefault()
       e.stopPropagation()
     }
     loaderInto.style.display = 'flex'
     // because our loader is React, we should display it like this.
-    ReactDOM.render(<Loader size={80} borderSize={8} />, loaderInto)
+    renderTo(loaderInto, <Loader size={80} borderSize={8} />)
     //
     try {
       const pathParams = Object.assign({}, fBasePathParams)
@@ -78,7 +78,7 @@ export function makeForumThread(node: HTMLElement) {
         pathParams: pathParams,
         params: Object.assign({}, fBaseParams, { contentOnly: 'yes' }),
       })
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       const tmp = document.createElement('div')
@@ -90,7 +90,7 @@ export function makeForumThread(node: HTMLElement) {
       let newUrl
       if (!config.isFromHistory) {
         // take new page ID from the response
-        const fNewPathParams = JSON.parse(newNode.dataset.forumThreadPathParams)
+        const fNewPathParams = JSON.parse(newNode.dataset.forumThreadPathParams!)
         newUrl = `/forum/t-${fNewPathParams.t}`
         for (const k in fNewPathParams) {
           if (k === 'p' || k === 't' || k === 'post' || fNewPathParams[k] === null) {
@@ -102,8 +102,7 @@ export function makeForumThread(node: HTMLElement) {
         window.history.pushState({ forumThread: fNewPathParams.t, forumThreadPage: fNewPathParams.p }, '', newUrl + window.location.hash)
       }
     } catch (e) {
-      console.log(e)
-      ReactDOM.unmountComponentAtNode(loaderInto)
+      unmountFromRoot(loaderInto)
       loaderInto.innerHTML = ''
       loaderInto.style.display = 'none'
       showErrorModal(e.error || 'Ошибка связи с сервером')
@@ -112,14 +111,14 @@ export function makeForumThread(node: HTMLElement) {
 
   window.addEventListener('popstate', (e: PopStateEvent) => {
     if (e.state && e.state.forumThread === fBasePathParams.t) {
-      switchPage(undefined, { page: e.state.forumThreadPage, isFromHistory: true })
+      switchPage(null, { page: e.state.forumThreadPage, isFromHistory: true })
     }
   })
 
   window.addEventListener('hashchange', () => {
     if (window.location.hash.startsWith('#post-')) {
       // navigate to different post; ignore page
-      switchPage(undefined, { postId: window.location.hash.substring(6) })
+      switchPage(null, { postId: window.location.hash.substring(6) })
     }
   })
 
@@ -128,7 +127,7 @@ export function makeForumThread(node: HTMLElement) {
   if (window.location.hash.startsWith('#post-')) {
     node.innerHTML = ''
     setupPageSwitch()
-    switchPage(undefined, { postId: window.location.hash.substring(6) })
+    switchPage(null, { postId: window.location.hash.substring(6) })
   } else {
     setupPageSwitch()
   }

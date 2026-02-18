@@ -46,7 +46,7 @@ const ArticleParent: React.FC<Props> = ({ pageId, onClose }) => {
     setLoading(true)
     fetchArticle(pageId)
       .then(data => {
-        setParent(data.parent)
+        setParent(data.parent ?? '')
       })
       .catch(e => {
         setFatalError(true)
@@ -64,7 +64,7 @@ const ArticleParent: React.FC<Props> = ({ pageId, onClose }) => {
     }
 
     setSaving(true)
-    setError(undefined)
+    setError('')
     setSavingSuccess(false)
 
     const input = {
@@ -75,6 +75,7 @@ const ArticleParent: React.FC<Props> = ({ pageId, onClose }) => {
     try {
       await updateArticle(pageId, input)
       setSavingSuccess(true)
+      setSaving(false)
       await sleep(1000)
       setSavingSuccess(false)
       window.scrollTo(window.scrollX, 0)
@@ -108,7 +109,7 @@ const ArticleParent: React.FC<Props> = ({ pageId, onClose }) => {
   })
 
   const onCloseError = useConstCallback(() => {
-    setError(undefined)
+    setError('')
     if (fatalError) {
       onCancel(null)
     }

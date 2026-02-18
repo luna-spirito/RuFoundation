@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from django.utils.http import urlsafe_base64_encode
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -34,7 +35,7 @@ class InviteView(FormView):
     user = None
 
     def get_initial(self):
-        initial = super(InviteView, self).get_initial()
+        initial = super().get_initial()
         return initial
 
     def get_user(self) -> User | None:
@@ -44,14 +45,14 @@ class InviteView(FormView):
         return None
 
     def get_context_data(self, **kwargs):
-        context = super(InviteView, self).get_context_data(**kwargs)
+        context = super().get_context_data(**kwargs)
         context["title"] = "Пригласить пользователя"
         context["submit_btn"] = "Отправить"
         user = self.get_user()
         if user:
             context["title"] = "Активировать пользователя wd:%s" % user.wikidot_username
             context["submit_btn"] = "Активировать"
-        context.update(site._wrapped.each_context(self.request))
+        context.update(site.each_context(self.request))
         return context
 
     def get_success_url(self):
@@ -59,15 +60,18 @@ class InviteView(FormView):
 
     def form_valid(self, form):
         email = form.cleaned_data['email']
-        is_editor = form.cleaned_data['is_editor']
+        roles = form.cleaned_data['roles']
         user = self.get_user()
         if user:
             created = not user.email
         else:
-            user, created = User.objects.get_or_create(email=email)
+            try:
+                user, created = User.objects.get_or_create(email=email)
+            except IntegrityError:
+                created = False
         site = get_current_site()
         if created:
-            user.is_editor = is_editor
+            user.roles.set(roles)
             user.is_active = False
             user.username = 'user-%d' % user.id
             user.email = email

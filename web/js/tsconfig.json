@@ -8,7 +8,9 @@
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
-    "baseUrl": "src/",
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "strictNullChecks": true,
     "paths": {
       "~reactive/*": ["reactive/*"],
       "~forum/*": ["forum/*"],

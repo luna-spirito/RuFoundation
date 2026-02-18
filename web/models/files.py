@@ -1,3 +1,7 @@
+__all__ = [
+    'File'
+]
+
 from django.conf import settings
 import auto_prefetch
 from django.db import models
