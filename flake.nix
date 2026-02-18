@@ -26,22 +26,26 @@
           version = "1.0";
           src = ftml-source;
           nativeBuildInputs = [ pkgs.python313 ];
-          cargoHash = "sha256-3PChiOzxtbVdyrpjzw8Mloa3RLoFA8DqT2C+j2Uy4Cc=";
+          cargoHash = "sha256-IAduD3fd9TTZ+VCDgvOlmeGYVdk2Wbgh9nVv6QVB2BE=";
         };
         web-js = pkgs.stdenv.mkDerivation rec {
           name = "web";
           src = ./web/js;
           yarnOfflineCache = pkgs.fetchYarnDeps {
             yarnLock = src + "/yarn.lock";
-            hash = "sha256-fDW4tNEY5LYjII5jfU01/B90VacyK2gHrPbOlI5MzVg=";
+            hash = "sha256-2DYk/p6dlF6d12bvtVrjwKbVxUy4DWRyHYPbHssUM9g=";
           };
           nativeBuildInputs = with pkgs; [
             yarnConfigHook
             yarnBuildHook
-            nodePackages_latest.ts-node
+            nodejs
+
           ];
           patchPhase = ''
             substituteInPlace build.ts --replace-fail "../../static" "out"
+          '';
+          preBuild = ''
+            mkdir -p out
           '';
           installPhase = ''
             mv out $out
@@ -94,22 +98,58 @@
               doCheck = false;
               propagatedBuildInputs = [ django_5 ];
             };
+            persisting-theory = buildPythonPackage rec {
+              pname = "persisting-theory";
+              version = "1.0";
+              src = pkgs.fetchurl {
+                url = "https://files.pythonhosted.org/packages/89/5d/533442b24abd6be67a332987aebc0ce0fcfe39bfad36564d08f3db375291/persisting_theory-1.0-py3-none-any.whl";
+                sha256 = "sha256-c/47oep6tnYyocKS/FyfptPr/Q4q103vpW4xar88jSE=";
+              };
+              format = "wheel";
+              doCheck = false;
+            };
+            django-dynamic-preferences = buildPythonPackage rec {
+              pname = "django-dynamic-preferences";
+              version = "1.17.0";
+              src = pkgs.fetchurl {
+                url = "https://files.pythonhosted.org/packages/c5/7e/386a9cb4fdc83bcc33a381842a8e359621c780f24ba820c3080406edaafe/django_dynamic_preferences-1.17.0-py2.py3-none-any.whl";
+                sha256 = "sha256-H3ER4BI1tic6QDh4PZKovygmy07ufjJHebLcduPgCwY=";
+              };
+              format = "wheel";
+              doCheck = false;
+              propagatedBuildInputs = [ django_5 persisting-theory ];
+            };
+            django-admin-sortable2 = buildPythonPackage rec {
+              pname = "django-admin-sortable2";
+              version = "2.3.1";
+              src = pkgs.fetchurl {
+                url = "https://files.pythonhosted.org/packages/c8/77/4396e853c3ee3b1264a2bb23f9b1934194ab750c6ecd30aa194b53dec7b9/django_admin_sortable2-2.3.1-py3-none-any.whl";
+                sha256 = "sha256-V4T0QfNTIBNDjDwyJvvMw5uccz+Geyal9HfWsF9zS5M=";
+              };
+              format = "wheel";
+              doCheck = false;
+              propagatedBuildInputs = [ django_5 ];
+            };
           in with ps; [
             django_5 django-jazzmin django_5-guardian pillow
             python-dotenv psycopg2 watchdog beautifulsoup4
             django-auto-prefetch langcodes requests
             django-solo psutil whitenoise
-            gunicorn
+            gunicorn django-dynamic-preferences django-admin-sortable2
+            rcssmin
+            (django-debug-toolbar.override { django = django_5; })
           ]
         );
         scpwiki-nofiles = pkgs.stdenv.mkDerivation {
           name = "scpwiki-nofiles";
           src = ./.;
           buildPhase = ''
+            export SECRET_KEY=1
+            export DEBUG=false
             cp -r ${web-js}/* ./static/
             cp -r ${ftml}/lib/libftml.so ./ftml/ftml.so
             rm -rf files
-            ${scpwiki-python}/bin/python3 manage.py collectstatic
+            ${scpwiki-python}/bin/python3 manage.py collectstatic --noinput
           '';
           installPhase = ''
             cp -r . $out
@@ -122,7 +162,7 @@
               postgresql
               scpwiki-python
               yarn
-              nodePackages_latest.ts-node
+
               fenix.packages.${system}.minimal.toolchain
             ];
           };
