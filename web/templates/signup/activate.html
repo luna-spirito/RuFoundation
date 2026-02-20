@@ -1,0 +1,23 @@
+{% extends "system_base.html" %}
+
+{% block h1 %}{% block title %}Активация аккаунта{% endblock %}{% endblock %}
+
+
+{% block content %}
+    <div class="login-form">
+        {% if error %}
+            <div class="error">
+                <p>{{ error }}</p>
+            </div>
+            {% if error_fatal %}
+                <div class="under-text">
+                    <a href="{% url "register" %}">Попробовать зарегистрироваться снова</a>
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="success">
+                <p>Ваш аккаунт успешно активирован! Вы будете перенаправлены...</p>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -1,16 +1,23 @@
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.models import AbstractUser as _UserType
-from django.utils.http import urlsafe_base64_decode
-from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str, force_bytes
 from django.contrib.auth import get_user_model
 from django.http import HttpRequest, HttpResponseRedirect
 from django.contrib.auth import login
 from django.views.generic.base import TemplateResponseMixin, ContextMixin, View
+from django.core.mail import send_mail, BadHeaderError
+from django.template.loader import render_to_string
+from django.db import IntegrityError
+from django.urls import reverse
 
 import re
 
 from web.models.users import UsedToken
+from web.models.roles import Role
+from web.models.site import get_current_site
+from web.forms import RegisterForm
 from .invite import account_activation_token
 from web.events import EventBase
 
@@ -91,5 +98,146 @@ class AcceptInvitationView(TemplateResponseMixin, ContextMixin, View):
         UsedToken.mark_used(self.kwargs['token'], is_case_sensitive=True)
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         OnUserSignUp(request, user).emit()
+        return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
+
+
+class RegisterView(TemplateResponseMixin, ContextMixin, View):
+    template_name = "signup/register.html"
+    form_class = RegisterForm
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if not isinstance(request.user, AnonymousUser):
+            return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
+        path = request.META['RAW_PATH'][1:]
+        context = self.get_context_data(path=path)
+        context['form'] = self.form_class()
+        return self.render_to_response(context)
+
+    def post(self, request, *args, **kwargs):
+        if not isinstance(request.user, AnonymousUser):
+            return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
+        
+        path = request.META['RAW_PATH'][1:]
+        context = self.get_context_data(path=path)
+        form = self.form_class(request.POST)
+        
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            email = form.cleaned_data['email']
+            password = form.cleaned_data['password']
+            
+            try:
+                # Создаем пользователя неактивным
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    is_active=False
+                )
+                
+                # Присваиваем роль "читатель"
+                try:
+                    reader_role = Role.objects.get(slug='reader')
+                    user.roles.add(reader_role)
+                except Role.DoesNotExist:
+                    # Если роль не существует, создаем её
+                    reader_role = Role.objects.create(
+                        slug='reader',
+                        name='Читатель',
+                        votes_title='Голоса читателей',
+                        profile_visual_mode='status',
+                        group_votes=True
+                    )
+                    user.roles.add(reader_role)
+                
+                # Отправляем email с подтверждением
+                site = get_current_site()
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = account_activation_token.make_token(user)
+                activation_url = request.build_absolute_uri(
+                    reverse('activate_account', kwargs={'uidb64': uid, 'token': token})
+                )
+                subject = f"Подтверждение регистрации на {site.title}"
+                c = {
+                    "email": user.email,
+                    'domain': request.get_host(),
+                    'site_name': site.title,
+                    "uid": uid,
+                    "user": user,
+                    'token': token,
+                    'protocol': request.scheme,
+                    'activation_url': activation_url,
+                }
+                content = render_to_string("mails/activation_email.txt", c, request=request)
+                try:
+                    from_email = settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else None
+                    send_mail(subject, content, from_email, [user.email], fail_silently=False)
+                    context['success'] = True
+                    context['message'] = 'Письмо с подтверждением отправлено на ваш email. Пожалуйста, проверьте почту и перейдите по ссылке для активации аккаунта.'
+                except BadHeaderError:
+                    context['error'] = 'Ошибка при отправке письма. Пожалуйста, попробуйте позже.'
+                    user.delete()  # Удаляем пользователя если не удалось отправить письмо
+            except IntegrityError:
+                context['error'] = 'Ошибка при создании аккаунта. Возможно, пользователь с таким именем или email уже существует.'
+        else:
+            context['form'] = form
+            if form.errors:
+                error_messages = []
+                for field, errors in form.errors.items():
+                    for error in errors:
+                        error_messages.append(error)
+                context['error'] = ' '.join(error_messages)
+        
+        return self.render_to_response(context)
+
+
+class ActivateAccountView(TemplateResponseMixin, ContextMixin, View):
+    template_name = "signup/activate.html"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_user(self):
+        try:
+            uid = force_str(urlsafe_base64_decode(self.kwargs["uidb64"]))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
+        return user
+
+    def get(self, request, *args, **kwargs):
+        path = request.META['RAW_PATH'][1:]
+        context = self.get_context_data(path=path)
+        user = self.get_user()
+        
+        if user is None:
+            context['error'] = 'Некорректная ссылка активации.'
+            context['error_fatal'] = True
+            return self.render_to_response(context)
+        
+        if UsedToken.is_used(self.kwargs['token']):
+            context['error'] = 'Ссылка активации уже была использована.'
+            context['error_fatal'] = True
+            return self.render_to_response(context)
+        
+        if not account_activation_token.check_token(user, self.kwargs["token"]):
+            context['error'] = 'Некорректная или устаревшая ссылка активации.'
+            context['error_fatal'] = True
+            return self.render_to_response(context)
+        
+        # Активируем пользователя
+        user.is_active = True
+        user.save()
+        
+        # Помечаем токен как использованный
+        UsedToken.mark_used(self.kwargs['token'], is_case_sensitive=True)
+        
+        # Автоматически входим пользователя
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        OnUserSignUp(request, user).emit()
+        
         return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
 

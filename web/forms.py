@@ -40,3 +40,47 @@ class CreateBotForm(forms.Form):
                 RegexValidator(r'^[A-Za-z0-9_-]+$', 'Некорректное имя пользователя')
             ]
         )
+
+
+class RegisterForm(forms.Form):
+    username = forms.CharField(
+        label='Никнейм',
+        required=True,
+        max_length=150,
+        validators=[RegexValidator(r'^[\w.-]+\Z', 'Некорректное имя пользователя. Разрешённые символы: A-Z, a-z, 0-9, -, _.')],
+        widget=forms.TextInput(attrs={'autofocus': '', 'autocapitalize': 'none', 'autocomplete': 'username'})
+    )
+    email = forms.EmailField(
+        label='Email',
+        required=True,
+        widget=forms.EmailInput(attrs={'autocomplete': 'email'})
+    )
+    password = forms.CharField(
+        label='Пароль',
+        required=True,
+        widget=forms.PasswordInput(attrs={'autocomplete': 'new-password'})
+    )
+    password2 = forms.CharField(
+        label='Повторите пароль',
+        required=True,
+        widget=forms.PasswordInput(attrs={'autocomplete': 'new-password'})
+    )
+
+    def clean_username(self):
+        username = self.cleaned_data.get('username')
+        if User.objects.filter(username=username).exists():
+            raise forms.ValidationError('Пользователь с данным именем уже существует')
+        return username
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError('Пользователь с данным email уже существует')
+        return email
+
+    def clean_password2(self):
+        password = self.cleaned_data.get('password')
+        password2 = self.cleaned_data.get('password2')
+        if password and password2 and password != password2:
+            raise forms.ValidationError('Введенные пароли не совпадают')
+        return password2

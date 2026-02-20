@@ -1,0 +1,80 @@
+{% extends "system_base.html" %}
+
+{% block h1 %}{% block title %}Регистрация{% endblock %}{% endblock %}
+
+
+{% block content %}
+    <div class="login-form">
+        {% if error %}
+            <div class="error">
+                <p>{{ error }}</p>
+            </div>
+            <br>
+        {% endif %}
+        {% if success %}
+            <div class="success">
+                <p>{{ message }}</p>
+            </div>
+        {% else %}
+            <form method="POST">
+                {% csrf_token %}
+                <div class="text-input">
+                    <span class="icon begin">
+                        <i class="fas fa-user"></i>
+                    </span>
+                    <input type="text" placeholder="Ваш никнейм" name="username" autofocus="" autocapitalize="none" autocomplete="username" maxlength="150" required id="id_username" value="{% if form.username.value %}{{ form.username.value }}{% endif %}">
+                </div>
+                {% if form.username.errors %}
+                    <div class="error">
+                        {% for error in form.username.errors %}
+                            <p>{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <div class="text-input">
+                    <span class="icon begin">
+                        <i class="fas fa-envelope"></i>
+                    </span>
+                    <input type="email" placeholder="Ваш Gmail" name="email" autocomplete="email" required id="id_email" value="{% if form.email.value %}{{ form.email.value }}{% endif %}">
+                </div>
+                {% if form.email.errors %}
+                    <div class="error">
+                        {% for error in form.email.errors %}
+                            <p>{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <div class="text-input">
+                    <span class="icon begin">
+                        <i class="fas fa-lock"></i>
+                    </span>
+                    <input type="password" placeholder="Ваш пароль" name="password" autocomplete="new-password" required id="id_password">
+                </div>
+                {% if form.password.errors %}
+                    <div class="error">
+                        {% for error in form.password.errors %}
+                            <p>{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <div class="text-input">
+                    <span class="icon begin">
+                        <i class="fas fa-lock"></i>
+                    </span>
+                    <input type="password" placeholder="Повторите пароль" name="password2" autocomplete="new-password" required id="id_password2">
+                </div>
+                {% if form.password2.errors %}
+                    <div class="error">
+                        {% for error in form.password2.errors %}
+                            <p>{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <button class="btn btn-primary" type="submit">Зарегистрироваться</button>
+            </form>
+            <div class="under-text">
+                <a href="{% url "login" %}">Уже есть аккаунт? Войти</a>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

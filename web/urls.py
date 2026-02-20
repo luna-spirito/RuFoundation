@@ -80,6 +80,7 @@ reactive_pages = [
 sys_patterns = [
     path("login", login.LoginView.as_view(), name='login'),
     path("logout", login.LogoutView.as_view()),
+    path("register", signup.RegisterView.as_view(), name='register'),
     path("password_reset", PasswordResetView.as_view(
             template_name="login/password_reset.html",
             email_template_name="mails/password_reset_email.txt"),
@@ -92,6 +93,7 @@ sys_patterns = [
     path("profile/edit", profile.ChangeProfileView.as_view(template_name="profile/change.html"), name="profile_edit"),
 
     path('accept/<uidb64>/<token>', signup.AcceptInvitationView.as_view(), name="accept"),
+    path('activate/<uidb64>/<token>', signup.ActivateAccountView.as_view(), name="activate_account"),
 
     re_path(r'^preferences/', include('dynamic_preferences.urls')),
 
