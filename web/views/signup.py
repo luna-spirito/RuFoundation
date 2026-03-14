@@ -29,6 +29,22 @@ class OnUserSignUp(EventBase, name='on_user_signup'):
     request: HttpRequest
     user: _UserType
 
+
+def _assign_default_role(user):
+    """
+    Присваивает пользователю роль по умолчанию, если она задана в настройках.
+    Роль должна существовать заранее — автоматического создания не происходит.
+    """
+    role_slug = getattr(settings, 'DEFAULT_USER_ROLE', None)
+    if not role_slug:
+        return
+    try:
+        role = Role.objects.get(slug=role_slug)
+        user.roles.add(role)
+    except Role.DoesNotExist:
+        pass
+
+
 class AcceptInvitationView(TemplateResponseMixin, ContextMixin, View):
     template_name = "signup/accept.html"
 
@@ -119,41 +135,26 @@ class RegisterView(TemplateResponseMixin, ContextMixin, View):
     def post(self, request, *args, **kwargs):
         if not isinstance(request.user, AnonymousUser):
             return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
-        
+
         path = request.META['RAW_PATH'][1:]
         context = self.get_context_data(path=path)
         form = self.form_class(request.POST)
-        
+
         if form.is_valid():
             username = form.cleaned_data['username']
             email = form.cleaned_data['email']
             password = form.cleaned_data['password']
-            
+
             try:
-                # Создаем пользователя неактивным
                 user = User.objects.create_user(
                     username=username,
                     email=email,
                     password=password,
                     is_active=False
                 )
-                
-                # Присваиваем роль "читатель"
-                try:
-                    reader_role = Role.objects.get(slug='reader')
-                    user.roles.add(reader_role)
-                except Role.DoesNotExist:
-                    # Если роль не существует, создаем её
-                    reader_role = Role.objects.create(
-                        slug='reader',
-                        name='Читатель',
-                        votes_title='Голоса читателей',
-                        profile_visual_mode='status',
-                        group_votes=True
-                    )
-                    user.roles.add(reader_role)
-                
-                # Отправляем email с подтверждением
+
+                _assign_default_role(user)
+
                 site = get_current_site()
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
                 token = account_activation_token.make_token(user)
@@ -173,13 +174,13 @@ class RegisterView(TemplateResponseMixin, ContextMixin, View):
                 }
                 content = render_to_string("mails/activation_email.txt", c, request=request)
                 try:
-                    from_email = settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else None
+                    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None)
                     send_mail(subject, content, from_email, [user.email], fail_silently=False)
                     context['success'] = True
                     context['message'] = 'Письмо с подтверждением отправлено на ваш email. Пожалуйста, проверьте почту и перейдите по ссылке для активации аккаунта.'
                 except BadHeaderError:
                     context['error'] = 'Ошибка при отправке письма. Пожалуйста, попробуйте позже.'
-                    user.delete()  # Удаляем пользователя если не удалось отправить письмо
+                    user.delete()
             except IntegrityError:
                 context['error'] = 'Ошибка при создании аккаунта. Возможно, пользователь с таким именем или email уже существует.'
         else:
@@ -190,7 +191,7 @@ class RegisterView(TemplateResponseMixin, ContextMixin, View):
                     for error in errors:
                         error_messages.append(error)
                 context['error'] = ' '.join(error_messages)
-        
+
         return self.render_to_response(context)
 
 
@@ -212,32 +213,28 @@ class ActivateAccountView(TemplateResponseMixin, ContextMixin, View):
         path = request.META['RAW_PATH'][1:]
         context = self.get_context_data(path=path)
         user = self.get_user()
-        
+
         if user is None:
             context['error'] = 'Некорректная ссылка активации.'
             context['error_fatal'] = True
             return self.render_to_response(context)
-        
+
         if UsedToken.is_used(self.kwargs['token']):
             context['error'] = 'Ссылка активации уже была использована.'
             context['error_fatal'] = True
             return self.render_to_response(context)
-        
+
         if not account_activation_token.check_token(user, self.kwargs["token"]):
             context['error'] = 'Некорректная или устаревшая ссылка активации.'
             context['error_fatal'] = True
             return self.render_to_response(context)
-        
-        # Активируем пользователя
+
         user.is_active = True
         user.save()
-        
-        # Помечаем токен как использованный
+
         UsedToken.mark_used(self.kwargs['token'], is_case_sensitive=True)
-        
-        # Автоматически входим пользователя
+
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         OnUserSignUp(request, user).emit()
-        
-        return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
 
+        return HttpResponseRedirect(redirect_to=settings.LOGIN_REDIRECT_URL)
