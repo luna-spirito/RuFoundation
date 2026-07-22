@@ -49,15 +49,25 @@ class MediaView(View):
     
 
     def media_safe_path(self, path: str | Path, *, must_exist: bool = False) -> Path:
+        # MEDIA_ROOT может быть симлинком (у нас в nix: /nix/store/…/files
+        # → /var/lib/scpwiki). Резолвим его один раз и сравниваем
+        # resolved-to-resolved — иначе проверка валидного пути падает.
+        root = settings.MEDIA_ROOT.resolve()
+
         relative = Path(path)
 
+        # Принимаем как абсолютные пути (корнем является MEDIA_ROOT — именно
+        # так вьюха ниже вызывает нас, передавая `document_root / dir_path`),
+        # так и обычные относительные. В любом случае резолвим и убеждаемся,
+        # что результат остаётся внутри MEDIA_ROOT: это отсекает и ../
+        # traversal, и symlink-эскейпы наружу.
         if relative.anchor:
-            raise UnsafePathError('Anchor paths restricled')
-
-        candidate = (settings.MEDIA_ROOT / relative).resolve(strict=must_exist)
+            candidate = relative.resolve(strict=must_exist)
+        else:
+            candidate = (root / relative).resolve(strict=must_exist)
 
         try:
-            candidate.relative_to(settings.MEDIA_ROOT)
+            candidate.relative_to(root)
         except ValueError as exc:
             raise UnsafePathError('Path extends beyond the media directory.') from exc
 
