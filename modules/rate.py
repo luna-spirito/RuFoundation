@@ -2,7 +2,7 @@ from django.contrib.auth.models import AnonymousUser
 
 from renderer.utils import UserJSON, render_user_to_json, render_template_from_string
 
-from web.controllers.articles import get_rating, Vote
+from web.controllers.articles import get_article, get_rating, Vote
 from web.models.settings import Settings
 from web.controllers import articles
 from web.util.pydantic import JSONInterface, drop_nones
@@ -16,21 +16,27 @@ def allow_api():
 
 
 def render(context, _params):
-    if not context.article:
+    pageid = _params.get('page')
+    if pageid:
+        article = get_article(pageid)
+    else:
+        article = context.article
+    
+    if not article:
         raise ModuleError('Страница не указана')
-    rating, votes, popularity, mode = get_rating(context.article)
+    rating, votes, popularity, mode = get_rating(article)
 
     if mode == Settings.RatingMode.UpDown:
         return render_template_from_string(
             ''.join([
                 '<div class="w-rate-module page-rate-widget-box" data-page-id="{{page_id}}">',
                 '<span class="rate-points">рейтинг:&nbsp;<span class="number prw54353">{{rating}}</span></span>',
-                '<span class="rateup btn btn-default"><a title="Мне нравится" href="#">+</a></span>',
-                '<span class="ratedown btn btn-default"><a title="Мне не нравится" href="#">–</a></span>',
-                '<span class="cancel btn btn-default"><a title="Отменить голос" href="#">x</a></span>',
+                '<span class="rateup btn btn-default"><a data-tooltip="Мне нравится" aria-label="Мне нравится" href="#">+</a></span>',
+                '<span class="ratedown btn btn-default"><a data-tooltip="Мне не нравится" aria-label="Мне не нравится" href="#">–</a></span>',
+                '<span class="cancel btn btn-default"><a data-tooltip="Отменить голос" aria-label="Отменить голос" href="#">x</a></span>',
                 '</div>'
             ]),
-            page_id=context.article.full_name,
+            page_id=article.full_name,
             rating='%+d' % rating
         )
     elif mode == Settings.RatingMode.Stars:
@@ -42,15 +48,15 @@ def render(context, _params):
                 '<div class="w-stars-rate-stars-wrapper"><div class="w-stars-rate-stars-view" style="width: {{rating_percentage}}%; --rated-var: {{rated}}"></div></div>',
                 '<div class="w-stars-rate-cancel"></div>'
                 '</div>',
-                '<div class="w-stars-rate-votes"><span class="w-stars-rate-number" title="Количество голосов">{{votes}}</span>/<span class="w-stars-rate-popularity" title="Популярность (процент голосов 3.0 и выше)">{{popularity}}</span>%</div>',
+                '<div class="w-stars-rate-votes"><span class="w-stars-rate-number" data-tooltip="Количество голосов">{{votes}}</span>/<span class="w-stars-rate-popularity" data-tooltip="Популярность (процент голосов 3.0 и выше)">{{popularity}}</span>%</div>',
                 '</div>'
             ]),
-            page_id=context.article.full_name,
+            page_id=article.full_name,
             rating=('%.1f' % rating) if votes else '—',
             rating_percentage='%d' % (rating * 20),
             votes='%d' % votes,
             popularity='%d' % popularity,
-            rated="#f0ac00" if context.user and not isinstance(context.user, AnonymousUser) and Vote.objects.filter(article=context.article, user=context.user) else '#4e6b6b'
+            rated="#f0ac00" if context.user and not isinstance(context.user, AnonymousUser) and Vote.objects.filter(article=article, user=context.user) else '#4e6b6b'
 
         )
     else:

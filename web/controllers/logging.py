@@ -122,6 +122,39 @@ def get_action_log_entry_description(log_entry: ActionLogEntry):
                 return _render_post_edit_preview(m)
             case ActionType.RemoveForumPost:
                 return _make_post_preview(m['post']['id'], m['post']['author'], m['title'], m['source'])
+            case ActionType.PinForumPost:
+                thread_name = m['thread']['name']
+                post_id = m['post']['id']
+                return f'В теме "{thread_name}" закреплено сообщение №{post_id}'
+            case ActionType.UnpinForumPost:
+                thread_name = m['thread']['name']
+                post_id = m['post']['id']
+                return f'В теме "{thread_name}" откреплено сообщение №{post_id}'
+            case ActionType.AddForumReaction:
+                thread_name = m['thread']['name']
+                post_id = m['post']['id']
+                reaction_name = m['reaction']['name']
+                return f'В теме "{thread_name}" к сообщению №{post_id} добавлена реакция "{reaction_name}"'
+            case ActionType.RemoveForumReaction:
+                thread_name = m['thread']['name']
+                post_id = m['post']['id']
+                reaction_name = m['reaction']['name']
+                target_user = m['target_user']['username']
+                if m['target_user']['id'] == log_entry.user_id:
+                    return f'В теме "{thread_name}" с сообщения №{post_id} удалена реакция "{reaction_name}"'
+                return f'В теме "{thread_name}" с сообщения №{post_id} удалена реакция "{reaction_name}" пользователя {target_user}'
+            case ActionType.ChangeProfileInfo:
+                target_user = m.get('target_user', {}).get('username', 'неизвестного пользователя')
+                action = m.get('action', 'profile')
+                action_labels = {
+                    'public_info': 'изменил публичную информацию',
+                    'status': 'изменил ограничения',
+                    'roles': 'изменил роли',
+                    'toggle_is_active': 'переключил блокировку аккаунта',
+                    'toggle_is_forum_active': 'переключил доступ к форуму',
+                    'toggle_is_forum_reactions_disabled': 'переключил запрет реакций форума',
+                }
+                return f"{action_labels.get(action, 'изменил профиль')} пользователя {target_user}"
             case _:
                 return None
     except:

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from renderer.utils import render_user_to_json
 from web.events import EventBase
 from web.models import ForumPost, ForumPostVersion, User
+from web.controllers import forum_reactions
 
 from ._csrf_protection import csrf_safe_method
 
@@ -24,6 +25,13 @@ class OnForumDeletePost(EventBase):
     post: ForumPost
     title: str
     source: str
+
+
+class OnForumPinPost(EventBase):
+    user: User
+    post: ForumPost
+    is_pinned: bool
+    prev_is_pinned: bool
 
 
 def has_content():
@@ -85,12 +93,13 @@ def api_update(context, params):
     if not context.user.has_perm('roles.edit_forum_posts', post):
         raise ModuleError('Недостаточно прав для редактирования сообщения')
 
-    latest_version = ForumPostVersion.objects.filter(post=post).order_by('-created_at')[:1]
-    prev_source = latest_version[0].source if latest_version else ''
+    latest_version = ForumPostVersion.objects.filter(post=post).order_by('-created_at').first()
+    prev_source = latest_version.source if latest_version else ''
 
     if source != prev_source:
         new_version = ForumPostVersion(post=post, source=source, author=context.user)
         new_version.save()
+        latest_version = new_version
         post.updated_at = datetime.now(timezone.utc)
 
     prev_title = post.name
@@ -104,11 +113,16 @@ def api_update(context, params):
 
     content = single_pass_render(source, RenderContext(None, None, {}, context.user), 'message')
 
+    has_revisions = ForumPostVersion.objects.filter(post=post).count() > 1
+
     return {
         'postId': post.id,
         'name': post.name,
         'createdAt': post.created_at.isoformat(),
         'updatedAt': post.updated_at.isoformat(),
+        'hasRevisions': has_revisions,
+        'lastRevisionDate': post.updated_at.isoformat() if has_revisions else None,
+        'lastRevisionAuthor': render_user_to_json(latest_version.author) if has_revisions and latest_version else None,
         'source': source,
         'content': content
     }
@@ -134,6 +148,79 @@ def api_delete(context, params):
     return {
         'status': 'ok'
     }
+
+
+def api_pin(context, params):
+    post_id = params.get('postid', -1)
+
+    post = (
+        ForumPost.objects
+        .select_related('thread', 'thread__article')
+        .filter(id=post_id)
+        .first()
+    )
+    if post is None:
+        raise ModuleError('Сообщение "%s" не существует' % post_id)
+
+    if not context.user.has_perm('roles.pin_forum_posts', post):
+        raise ModuleError('Недостаточно прав для закрепления сообщения')
+
+    prev_is_pinned = post.is_pinned
+    post.is_pinned = bool(params.get('ispinned'))
+    if post.is_pinned != prev_is_pinned:
+        post.save(update_fields=['is_pinned'])
+        OnForumPinPost(context.user, post, post.is_pinned, prev_is_pinned).emit()
+
+    return {
+        'postId': post.id,
+        'isPinned': post.is_pinned,
+    }
+
+
+@csrf_safe_method
+def api_reactions(context, params):
+    post_id = params.get('postid', -1)
+    post = forum_reactions.get_forum_post_for_reactions(post_id)
+    if post is None:
+        raise ModuleError('Сообщение "%s" не существует' % post_id)
+    if not forum_reactions.user_can_view_post(context.user, post):
+        raise ModuleError('Недостаточно прав для просмотра сообщения')
+
+    return forum_reactions.serialize_post_reaction_state(post, context.user)
+
+
+def api_react(context, params):
+    post_id = params.get('postid', -1)
+    post = forum_reactions.get_forum_post_for_reactions(post_id, lock=True)
+    if post is None:
+        raise ModuleError('Сообщение "%s" не существует' % post_id)
+
+    try:
+        forum_reactions.add_reaction_to_post(post, params.get('reactionid'), context.user)
+    except forum_reactions.ForumReactionError as e:
+        raise ModuleError(e.message)
+
+    return forum_reactions.serialize_post_reaction_state(post, context.user)
+
+
+def api_unreact(context, params):
+    post_id = params.get('postid', -1)
+    post = forum_reactions.get_forum_post_for_reactions(post_id, lock=True)
+    if post is None:
+        raise ModuleError('Сообщение "%s" не существует' % post_id)
+
+    try:
+        forum_reactions.remove_reaction_from_post(
+            post,
+            params.get('reactionid'),
+            context.user,
+            params.get('userid'),
+            params.get('allusers'),
+        )
+    except forum_reactions.ForumReactionError as e:
+        raise ModuleError(e.message)
+
+    return forum_reactions.serialize_post_reaction_state(post, context.user)
 
 
 @csrf_safe_method

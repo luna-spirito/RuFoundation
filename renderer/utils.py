@@ -32,6 +32,19 @@ def render_template_from_string(template: str, **context: object) -> SafeString:
     return tpl.render(Context(context))
 
 
+def format_ru_plural(number, one, few, many):
+    abs_number = abs(int(number))
+    if 11 <= abs_number % 100 <= 14:
+        form = many
+    elif abs_number % 10 == 1:
+        form = one
+    elif 2 <= abs_number % 10 <= 4:
+        form = few
+    else:
+        form = many
+    return f'{number} {form}'
+
+
 class RoleJSON(JSONInterface):
     slug: str
     name: Optional[str]=None
@@ -74,24 +87,35 @@ def render_user_to_text(user: _UserType):
     return user.username
 
 
-def render_user_to_html(user: _UserType, avatar=True, hover=True):
+def render_user_to_html(user: _UserType, avatar=True, hover=True, interactive=True, extra_tail='', show_tails=True):
+    class_add = ' avatarhover' if hover and interactive else ''
     if user is None:
         return render_template_from_string(
             '<span class="printuser{{class_add}}"><strong>system</strong></span>',
-            class_add=(' avatarhover' if hover else '')
+            class_add=class_add
         )
     if isinstance(user, AnonymousUser):
         return render_template_from_string(
             """
             <span class="printuser{{class_add}}">
                 {% if show_avatar %}
-                    <a onclick="return false;"><img class="small" src="{{avatar}}" alt="Anonymous User"></a>
+                    {% if interactive %}
+                        <a onclick="return false;"><img class="small" src="{{avatar}}" alt="Anonymous User"></a>
+                    {% else %}
+                        <span class="printuser-avatar"><img class="small" src="{{avatar}}" alt="Anonymous User"></span>
+                    {% endif %}
                 {% endif %}
-                <a onclick="return false;">Anonymous User</a></span>
+                {% if interactive %}
+                    <a onclick="return false;">Anonymous User</a>
+                {% else %}
+                    <span class="printuser-name">Anonymous User</span>
+                {% endif %}
+            </span>
             """,
-            class_add=(' avatarhover' if hover else ''),
+            class_add=class_add,
             show_avatar=avatar,
-            avatar=settings.ANON_AVATAR
+            avatar=settings.ANON_AVATAR,
+            interactive=interactive
         )
     if user.type == 'wikidot':
         user_avatar = settings.WIKIDOT_AVATAR
@@ -104,26 +128,38 @@ def render_user_to_html(user: _UserType, avatar=True, hover=True):
         """
         <span class="printuser w-user{{class_add}}" data-user-id="{{user_id}}" data-user-name="{{username}}">
             {% if show_avatar %}
-                <a href="/-/users/{{user_id}}-{{username}}"><img class="small" src="{{avatar}}" alt="{{displayname}}"></a>
+                {% if interactive %}
+                    <a href="/-/users/{{user_id}}-{{username}}"><img class="small" src="{{avatar}}" alt="{{displayname}}"></a>
+                {% else %}
+                    <span class="printuser-avatar"><img class="small" src="{{avatar}}" alt="{{displayname}}"></span>
+                {% endif %}
             {% endif %}
-            <a href="/-/users/{{user_id}}-{{username}}">{{displayname}}</a>
-            {% if show_avatar %}
+            {% if interactive %}
+                <a class="w-user-preview-trigger" href="/-/users/{{user_id}}-{{username}}" data-user-id="{{user_id}}" data-user-name="{{username}}" aria-haspopup="dialog">{{displayname}}</a>
+            {% else %}
+                <span class="printuser-name">{{displayname}}</span>
+            {% endif %}
+            {% if show_avatar and show_tails %}
                 {% for icon in tails.icons %}
-                    <span class="icon" {% if icon.tooltip %}title="{{icon.tooltip|safe}}"{% endif %}><img src="data:image/svg+xml,{{icon.icon}}"/></span>
+                    <span class="icon{% if icon.tooltip %} printuser-role-tail{% endif %}" {% if icon.tooltip %}tabindex="0" data-tooltip="{{icon.tooltip}}"{% endif %}><img src="data:image/svg+xml,{{icon.icon}}"/></span>
                 {% endfor %}
                 {% for badge in tails.badges %}
-                    <span class="badge" {% if badge.tooltip %}title="{{badge.tooltip|safe}}"{% endif %} style="background: {{badge.bg|safe}}; color: {{badge.text_color|safe}}; {% if badge.show_border %}border: solid 1px {{badge.text_color|safe}}{% endif %}">{{badge.text|safe}}</span>
+                    <span class="badge{% if badge.tooltip %} printuser-role-tail{% endif %}" {% if badge.tooltip %}tabindex="0" data-tooltip="{{badge.tooltip}}"{% endif %} style="background: {{badge.bg|safe}}; color: {{badge.text_color|safe}}; {% if badge.show_border %}border: solid 1px {{badge.text_color|safe}}{% endif %}">{{badge.text|safe}}</span>
                 {% endfor %}
             {% endif %}
+            {{ extra_tail }}
         </span>
         """,
-        class_add=(' avatarhover' if hover else ''),
+        class_add=class_add,
         show_avatar=avatar,
+        show_tails=show_tails,
+        interactive=interactive,
         tails=user.name_tails,
         avatar=user_avatar,
         user_id=user.pk,
         username=user.username,
-        displayname=displayname
+        displayname=displayname,
+        extra_tail=extra_tail
     )
 
 
@@ -205,7 +241,7 @@ def render_vote_to_html(vote: Vote, mode=Settings.RatingMode.Default, capitalize
             msg = msg.capitalize()
         return render_template_from_string(
             """
-            <span class="vote" title="Оценка обсуждаемой статьи">{{msg}}</span>
+            <span class="vote" data-tooltip="Оценка обсуждаемой статьи">{{msg}}</span>
             """,
             msg=msg
         )
@@ -222,7 +258,7 @@ def render_vote_to_html(vote: Vote, mode=Settings.RatingMode.Default, capitalize
 
     return render_template_from_string(
         """
-        <span class="vote" title="Оценка обсуждаемой статьи"><span class="rate">{{visual_rate}}</span>
+        <span class="vote" data-tooltip="Оценка обсуждаемой статьи"><span class="rate">{{visual_rate}}</span></span>
         """,
         visual_rate=visual_rate
     )

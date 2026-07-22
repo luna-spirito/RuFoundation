@@ -19,6 +19,13 @@ class CreateForumPostsPermission(BaseRolePermission):
     group = 'Форум'
 
 
+class ReactForumPostsPermission(BaseRolePermission):
+    name = 'Ставить реакции на форуме'
+    codename = 'react_forum_posts'
+    description = 'Позволяет ставить и удалять свои реакции под сообщениями форума'
+    group = 'Форум'
+
+
 class EditForumPostsPermission(BaseRolePermission):
     name = 'Редактировать посты на форуме'
     codename = 'edit_forum_posts'
@@ -30,6 +37,13 @@ class DeleteForumPostsPermission(BaseRolePermission):
     name = 'Удалять посты на форуме'
     codename = 'delete_forum_posts'
     description = 'Позволяет удалять посты на форуме'
+    group = 'Форум'
+
+
+class PinForumPostsPermission(BaseRolePermission):
+    name = 'Закреплять посты на форуме'
+    codename = 'pin_forum_posts'
+    description = 'Позволяет закреплять и откреплять посты на форуме'
     group = 'Форум'
 
 

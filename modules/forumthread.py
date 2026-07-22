@@ -2,6 +2,7 @@ import json
 import math
 import re
 
+from django.db.models import Count
 from django.db.models.functions import Lower
 from django.utils.safestring import SafeString
 
@@ -9,15 +10,21 @@ import renderer
 
 from modules import ModuleError
 from modules.listpages import render_date, render_pagination
-from renderer.utils import render_user_to_json, render_user_to_html, render_template_from_string, render_vote_to_html
+from renderer.utils import format_ru_plural, render_user_to_json, render_user_to_html, render_template_from_string, render_vote_to_html
 from renderer import RenderContext
 
 from web.controllers import articles
+from web.controllers import forum_reactions
 from web.models.users import User
 from web.models.articles import Vote
 from web.models.forum import ForumCategory, ForumThread, ForumSection, ForumPost, ForumPostVersion
+from web.models.settings import Settings
+from web.models.site import get_current_site
 
 from ._csrf_protection import csrf_safe_method
+
+
+REPLY_TARGET_EXCERPT_LENGTH = 96
 
 def has_content():
     return False
@@ -28,11 +35,196 @@ def allow_api():
 
 def get_post_contents(posts):
     post_ids = [x.id for x in posts]
+    if not post_ids:
+        return {}
     post_contents = ForumPostVersion.objects.order_by('post_id', '-created_at').distinct('post_id').filter(post_id__in=post_ids)
+    version_counts = {
+        item['post_id']: item['count']
+        for item in ForumPostVersion.objects.filter(post_id__in=post_ids).values('post_id').annotate(count=Count('id'))
+    }
     ret = {}
     for content in post_contents:
-        ret[content.post_id] = (content.source, content.author)
+        ret[content.post_id] = (content.source, content.author, version_counts.get(content.post_id, 0))
     return ret
+
+
+def get_thread_name(thread):
+    return thread.name if thread.category_id else thread.article.display_name
+
+
+def get_thread_url(thread):
+    return '/forum/t-%d/%s' % (thread.id, articles.normalize_article_name(get_thread_name(thread)))
+
+
+def get_post_content(post, post_contents=None):
+    if post_contents and post.id in post_contents:
+        return post_contents[post.id]
+
+    latest = ForumPostVersion.objects.filter(post=post).order_by('-created_at').first()
+    if latest is None:
+        return '', None, 0
+
+    version_count = ForumPostVersion.objects.filter(post=post).count()
+    return latest.source, latest.author, version_count
+
+
+def truncate_reply_target_text(text):
+    text = re.sub(r'\s+', ' ', text or '').strip()
+    if len(text) > REPLY_TARGET_EXCERPT_LENGTH:
+        return text[:REPLY_TARGET_EXCERPT_LENGTH].rstrip() + '...'
+    return text
+
+
+def make_reply_target_excerpt(source, context):
+    text = renderer.single_pass_render_text(source, RenderContext(None, None, {}, context.user), 'message')
+    return truncate_reply_target_text(text)
+
+
+def get_reply_target_info(context, thread, post, post_contents=None):
+    if post.reply_to_id and post.reply_to:
+        target = post.reply_to
+        title = truncate_reply_target_text(target.name or '')
+        excerpt = ''
+        if not title:
+            source, _author, _version_count = get_post_content(target, post_contents)
+            excerpt = make_reply_target_excerpt(source, context)
+        return {
+            'url': '%s#post-%d' % (get_thread_url(thread), target.id),
+            'user': render_user_to_html(target.author, interactive=False, show_tails=False),
+            'excerpt': excerpt,
+            'title': title,
+        }
+
+    if thread.article_id:
+        return {
+            'url': '/%s' % thread.article.full_name,
+            'user': '',
+            'excerpt': '',
+            'title': thread.article.display_name,
+        }
+
+    return {
+        'url': get_thread_url(thread),
+        'user': '',
+        'excerpt': '',
+        'title': thread.name,
+    }
+
+
+def get_replies_by_parent(root_posts):
+    all_posts = list(root_posts)
+    replies_by_parent = {}
+    frontier = list(root_posts)
+
+    while frontier:
+        parent_ids = [post.id for post in frontier]
+        replies = list(
+            ForumPost.objects
+            .filter(reply_to_id__in=parent_ids)
+            .select_related('author')
+            .order_by('created_at', 'id')
+        )
+
+        for reply in replies:
+            replies_by_parent.setdefault(reply.reply_to_id, []).append(reply)
+
+        all_posts.extend(replies)
+        frontier = replies
+
+    return all_posts, replies_by_parent
+
+
+def get_forum_post_max_depth():
+    site = get_current_site(required=False)
+    settings = site.settings if site else Settings.get_default_settings()
+    return max(1, settings.forum_post_max_depth or 1)
+
+
+def get_user_preferences(user):
+    if getattr(user, 'is_anonymous', True):
+        return {}
+    try:
+        return user.preferences.all()
+    except Exception:
+        return {}
+
+
+def get_forum_view_settings(user_preferences, params):
+    display_mode = (
+        params.get('displaymode') or
+        params.get('displayMode') or
+        user_preferences.get('qol__forum_display_mode') or
+        'pagination'
+    )
+    sort_order = (
+        params.get('sortorder') or
+        params.get('sortOrder') or
+        user_preferences.get('qol__forum_sort_order') or
+        'oldest'
+    )
+
+    if display_mode not in ('pagination', 'infinite'):
+        display_mode = 'pagination'
+    if sort_order not in ('oldest', 'newest'):
+        sort_order = 'oldest'
+
+    return display_mode, sort_order
+
+
+def are_forum_reactions_hidden(user_preferences):
+    return user_preferences.get('qol__forum_hide_reactions') is True
+
+
+def get_forum_reply_count_mode(user_preferences):
+    mode = user_preferences.get('qol__forum_reply_count_mode') or 'direct'
+    return mode if mode in ('direct', 'tree') else 'direct'
+
+
+def get_reply_descendant_counts(replies_by_parent):
+    counts = {}
+
+    def count_for(post_id):
+        if post_id in counts:
+            return counts[post_id]
+        children = replies_by_parent.get(post_id, [])
+        count = len(children) + sum(count_for(child.id) for child in children)
+        counts[post_id] = count
+        return count
+
+    for post_id in replies_by_parent:
+        count_for(post_id)
+
+    return counts
+
+
+def get_date_anchors(posts, total, per_page, max_anchors=14):
+    if total <= 0:
+        return []
+
+    anchor_count = min(total, max_anchors)
+    if anchor_count == 1:
+        indexes = [0]
+    else:
+        indexes = sorted({
+            round(i * (total - 1) / (anchor_count - 1))
+            for i in range(anchor_count)
+        })
+
+    anchors = []
+    values = posts.values('id', 'created_at')
+    for index in indexes:
+        post = values[index]
+        created_at = post['created_at']
+        anchors.append({
+            'postId': post['id'],
+            'page': int(index / per_page) + 1,
+            'label': created_at.strftime('%d.%m.%Y'),
+            'title': created_at.strftime('%d.%m.%Y %H:%M'),
+            'iso': created_at.isoformat(),
+            'position': 0 if total == 1 else index / (total - 1),
+        })
+
+    return anchors
 
 
 def highlight_mentions(text: str, usernames: set[str]) -> str:
@@ -49,52 +241,170 @@ def highlight_mentions(text: str, usernames: set[str]) -> str:
     return SafeString(regex.sub(repl, text))
 
 
-def get_post_info(context, thread, posts, show_replies=True, usernames: set[str]=set()):
-    post_contents = get_post_contents(posts)
+def render_author_mark(mark):
+    if not mark:
+        return ''
+    return render_template_from_string(
+        """
+        <span class="forum-author-mark" tabindex="0" aria-label="{{ mark }}" data-tooltip="{{ mark }}">
+            <i class="fas fa-feather-pointed" aria-hidden="true"></i>
+        </span>
+        """,
+        mark=mark
+    )
+
+
+def get_post_info(
+    context,
+    thread,
+    posts,
+    show_replies=True,
+    usernames: set[str] | None=None,
+    post_contents=None,
+    replies_by_parent=None,
+    reaction_context=None,
+    user_preferences=None,
+    hide_reactions=False,
+    reply_count_mode='direct',
+    reply_descendant_counts=None,
+    depth=1,
+    max_depth=5,
+):
+    posts = list(posts)
+    usernames = usernames or set()
+
+    if post_contents is None or replies_by_parent is None or (reaction_context is None and not hide_reactions):
+        all_posts, replies_by_parent = get_replies_by_parent(posts) if show_replies else (posts, {})
+        post_contents = get_post_contents(all_posts)
+        reaction_context = None if hide_reactions else forum_reactions.build_reaction_context(all_posts, context.user)
+        reply_descendant_counts = get_reply_descendant_counts(replies_by_parent)
+
+    reply_descendant_counts = reply_descendant_counts or {}
+
     post_info = []
 
     for post in posts:
-        replies = ForumPost.objects.filter(reply_to=post).order_by('created_at') if show_replies else []
+        post_url = '%s#post-%d' % (get_thread_url(thread), post.id)
+        replies = replies_by_parent.get(post.id, []) if show_replies else []
+        if replies and depth < max_depth:
+            reply_count = reply_descendant_counts.get(post.id, len(replies)) if reply_count_mode == 'tree' else len(replies)
+        else:
+            reply_count = 0
         author_vote = ''
-        is_op = thread.author == post.author
+        is_thread_author = post.author_id is not None and thread.author_id == post.author_id
+        is_op = is_thread_author
+        author_mark = 'Автор темы' if is_op else ''
+        reaction_state = (
+            {
+                'availableReactions': [],
+                'limits': {'maxPerUser': 0, 'maxPerPost': 0},
+                'reactions': [],
+                'totalCount': 0,
+                'myCount': 0,
+                'canReact': False,
+                'canRemoveOwnReactions': False,
+                'canModerateReactions': False,
+                'canUseInactiveReactions': False,
+            }
+            if hide_reactions
+            else forum_reactions.serialize_post_reaction_state(post, context.user, reaction_context)
+        )
 
         if thread.article:
+            is_article_author = post.author_id is not None and post.author in thread.article.authors.all()
             rating_mode = thread.article.settings.rating_mode
             author_vote = Vote.objects.filter(user=post.author, article=thread.article).last()
             author_vote = render_vote_to_html(author_vote, rating_mode)
-            if post.author in thread.article.authors.all():
-                is_op = True
+            is_op = is_article_author
+            author_mark = 'Автор статьи' if is_article_author else ''
+
+        post_content = post_contents.get(post.id, ('', None, 0))
+        has_revisions = post_content[2] > 1
 
         content = highlight_mentions(
-            renderer.single_pass_render(post_contents.get(post.id, ('', None))[0], RenderContext(None, None, {}, context.user), 'message'),
+            renderer.single_pass_render(post_content[0], RenderContext(None, None, {}, context.user), 'message'),
             usernames
         )
         render_post = {
             'id': post.id,
             'name': post.name,
-            'is_op': is_op, #e4f0c8
-            'author': render_user_to_html(post.author),
+            'display_name': post.name.strip() or 'Перейти к сообщению',
+            'is_op': is_op,
+            'is_pinned': post.is_pinned,
+            'author_mark': author_mark,
+            'author': render_user_to_html(post.author, extra_tail=render_author_mark(author_mark)),
             'author_rate': author_vote,
             'created_at': render_date(post.created_at),
             'updated_at': render_date(post.updated_at),
             'content': content,
-            'replies': get_post_info(context, thread, replies, show_replies, usernames),
+            'reply_target': get_reply_target_info(context, thread, post, post_contents),
+            'url': post_url,
+            'replies': [],
             'rendered_replies': None,
             'options_config': json.dumps({
                 'threadId': thread.id,
                 'threadName': thread.name if thread.category_id else thread.article.display_name,
                 'postId': post.id,
                 'postName': post.name,
-                'hasRevisions': post.created_at != post.updated_at,
+                'replyCount': reply_count,
+                'replyCountLabel': format_ru_plural(reply_count, 'ответ', 'ответа', 'ответов') if reply_count else '',
+                'hasRevisions': has_revisions,
                 'lastRevisionDate': post.updated_at.isoformat(),
-                'lastRevisionAuthor': render_user_to_json(post_contents.get(post.id, ('', None))[1]),
+                'lastRevisionAuthor': render_user_to_json(post_content[1]),
                 'user': render_user_to_json(context.user),
                 'canReply': context.user.has_perm('roles.create_forum_posts', thread) if not thread.article else context.user.has_perm('roles.comment_articles', thread),
                 'canEdit': context.user.has_perm('roles.edit_forum_posts', post),
-                'canDelete': context.user.has_perm('roles.delete_forum_posts', post)
+                'canDelete': context.user.has_perm('roles.delete_forum_posts', post),
+                'canPin': context.user.has_perm('roles.pin_forum_posts', post),
+                'isPinned': post.is_pinned,
+                'canReact': reaction_state['canReact'],
+                'canRemoveOwnReactions': reaction_state['canRemoveOwnReactions'],
+                'canModerateReactions': reaction_state['canModerateReactions'],
+                'canUseInactiveReactions': reaction_state['canUseInactiveReactions'],
+                'availableReactions': reaction_state['availableReactions'],
+                'reactions': reaction_state['reactions'],
+                'reactionLimits': reaction_state['limits'],
+                'reactionTotalCount': reaction_state['totalCount'],
+                'myReactionCount': reaction_state['myCount'],
+                'preferences': user_preferences or {},
             })
         }
         post_info.append(render_post)
+
+        if replies and depth < max_depth:
+            render_post['replies'] = get_post_info(
+                context,
+                thread,
+                replies,
+                show_replies,
+                usernames,
+                post_contents,
+                replies_by_parent,
+                reaction_context,
+                user_preferences,
+                hide_reactions,
+                reply_count_mode,
+                reply_descendant_counts,
+                depth + 1,
+                max_depth,
+            )
+        elif replies:
+            post_info.extend(get_post_info(
+                context,
+                thread,
+                replies,
+                show_replies,
+                usernames,
+                post_contents,
+                replies_by_parent,
+                reaction_context,
+                user_preferences,
+                hide_reactions,
+                reply_count_mode,
+                reply_descendant_counts,
+                depth,
+                max_depth,
+            ))
 
     return post_info
 
@@ -108,12 +418,25 @@ def render_posts(post_info):
         <div class="post-container">
             <div class="post" id="post-{{ post.id }}">
                 <div class="long">
-                    <div class="head {% if post.is_op %}op-post{% endif %}">
-                        <div class="title">
-                            {{ post.name }}
-                        </div>
+                    <div class="head {% if post.is_op %}op-post{% endif %} {% if post.is_pinned %}pinned-post{% endif %}">
+                        {% if post.reply_target %}
+                        <a class="forum-reply-target" href="{{ post.reply_target.url }}">
+                            <i class="fas fa-reply" aria-hidden="true"></i>
+                            <span class="forum-reply-target-label">На</span>
+                            {% if post.reply_target.user %}
+                                {{ post.reply_target.user }}
+                            {% endif %}
+                            {% if post.reply_target.title %}
+                                <span class="forum-reply-target-title">{{ post.reply_target.title }}</span>
+                            {% elif post.reply_target.excerpt %}
+                                <span class="forum-reply-target-excerpt">{{ post.reply_target.excerpt }}</span>
+                            {% endif %}
+                        </a>
+                        {% endif %}
+                        <div class="title">{{ post.name }}</div>
                         <div class="info">
-                            {{ post.author }} {{ post.created_at }} {{ post.author_rate }}
+                            {{ post.author }} {{ post.created_at }}
+                            {{ post.author_rate }}
                         </div>
                     </div>
                     <div class="content">
@@ -127,6 +450,55 @@ def render_posts(post_info):
             {% endif %}
         </div>
         {% endfor %}
+        """,
+        posts=post_info
+    )
+
+
+def render_pinned_posts(post_info):
+    if not post_info:
+        return ''
+    return render_template_from_string(
+        """
+        <div class="forum-pinned-posts" aria-label="Закрепленные сообщения">
+            {% for post in posts %}
+            <div class="post-container forum-pinned-post-preview" id="pinned-post-{{ post.id }}">
+                <div class="post">
+                    <div class="long">
+                        <div class="head {% if post.is_op %}op-post{% endif %} pinned-post">
+                            {% if post.reply_target %}
+                            <a class="forum-reply-target" href="{{ post.reply_target.url }}">
+                                <i class="fas fa-reply" aria-hidden="true"></i>
+                                <span class="forum-reply-target-label">На</span>
+                                {% if post.reply_target.user %}
+                                    {{ post.reply_target.user }}
+                                {% endif %}
+                                {% if post.reply_target.title %}
+                                    <span class="forum-reply-target-title">{{ post.reply_target.title }}</span>
+                                {% elif post.reply_target.excerpt %}
+                                    <span class="forum-reply-target-excerpt">{{ post.reply_target.excerpt }}</span>
+                                {% endif %}
+                            </a>
+                            {% endif %}
+                            <div class="title">
+                                <a class="forum-pinned-post-link" href="{{ post.url }}">
+                                    <i class="fas fa-thumbtack" aria-hidden="true"></i>
+                                    {{ post.display_name }}
+                                </a>
+                            </div>
+                            <div class="info">
+                                {{ post.author }} {{ post.created_at }}
+                                {{ post.author_rate }}
+                            </div>
+                        </div>
+                        <div class="content">
+                            {{ post.content }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
         """,
         posts=post_info
     )
@@ -179,7 +551,11 @@ def render(context: RenderContext, params):
 
     per_page = 10
 
-    q = ForumPost.objects.filter(thread=thread, reply_to__isnull=True).order_by('created_at')
+    user_preferences = get_user_preferences(context.user)
+    display_mode, sort_order = get_forum_view_settings(user_preferences, params)
+    order_by = ('created_at', 'id') if sort_order == 'oldest' else ('-created_at', '-id')
+
+    q = ForumPost.objects.filter(thread=thread, reply_to__isnull=True).order_by(*order_by)
 
     total = q.count()
 
@@ -222,16 +598,53 @@ def render(context: RenderContext, params):
         page = max_page
 
     usernames = set(User.objects.all().values_list(Lower('username'), flat=True))
+    hide_reactions = are_forum_reactions_hidden(user_preferences)
+    reply_count_mode = get_forum_reply_count_mode(user_preferences)
+    pinned_posts = (
+        ForumPost.objects
+        .filter(thread=thread, is_pinned=True)
+        .select_related('author', 'reply_to', 'reply_to__author')
+        .prefetch_related(
+            'author__roles',
+            'author__roles__permissions',
+            'author__roles__restrictions',
+        )
+        .order_by('created_at', 'id')
+    )
+    pinned_post_info = get_post_info(
+        context,
+        thread,
+        pinned_posts,
+        show_replies=False,
+        usernames=usernames,
+        user_preferences=user_preferences,
+        hide_reactions=hide_reactions,
+        reply_count_mode=reply_count_mode,
+        max_depth=get_forum_post_max_depth(),
+    )
     posts = q[(page-1)*per_page:page*per_page]
-    post_info = get_post_info(context, thread, posts, usernames=usernames)
+    post_info = get_post_info(
+        context,
+        thread,
+        posts,
+        usernames=usernames,
+        user_preferences=user_preferences,
+        hide_reactions=hide_reactions,
+        reply_count_mode=reply_count_mode,
+        max_depth=get_forum_post_max_depth(),
+    )
 
 
     context.path_params['p'] = str(page)
+    data_params = dict(params)
+    data_params['displayMode'] = display_mode
+    data_params['sortOrder'] = sort_order
 
     new_post_config = {
         'threadId': thread.id,
         'threadName': name,
         'user': render_user_to_json(context.user),
+        'preferences': user_preferences,
     }
 
     categories = []
@@ -302,11 +715,18 @@ def render(context: RenderContext, params):
             <div class="thread-container w-forum-thread"
                  id="thread-container"
                  data-forum-thread-path-params="{{ data_path_params }}"
-                 data-forum-thread-params="{{ data_params }}">
+                 data-forum-thread-params="{{ data_params }}"
+                 data-forum-thread-mode="{{ display_mode }}"
+                 data-forum-thread-sort-order="{{ sort_order }}"
+                 data-forum-thread-current-page="{{ page }}"
+                 data-forum-thread-max-page="{{ max_page }}"
+                 data-forum-thread-total-posts="{{ total_posts }}"
+                 data-forum-thread-date-anchors="{{ date_anchors }}">
                 <div id="thread-container-posts">
-                    {{ pagination }}
+                    {{ pinned_posts }}
+                    {% if display_mode == 'pagination' %}{{ pagination }}{% endif %}
                     {{ posts }}
-                    {{ pagination }}
+                    {% if display_mode == 'pagination' %}{{ pagination }}{% endif %}
                 </div>
             </div>
             {% if can_reply and not content_only %}
@@ -322,13 +742,19 @@ def render(context: RenderContext, params):
         created_by=render_user_to_html(thread.author),
         created_at=render_date(thread.created_at),
         total_posts=total,
-        pagination=render_pagination(short_url, page, max_page) if max_page != 1 else '',
+        pagination=render_pagination(short_url, page, max_page) if display_mode == 'pagination' and max_page != 1 else '',
         new_post_config=json.dumps(new_post_config),
+        pinned_posts=render_pinned_posts(pinned_post_info),
         posts=render_posts(post_info),
         can_reply=context.user.has_perm('roles.create_forum_posts', thread) if not thread.article else context.user.has_perm('roles.comment_articles', thread),
         content_only=content_only,
         data_path_params=json.dumps(context.path_params),
-        data_params=json.dumps(params),
+        data_params=json.dumps(data_params),
+        display_mode=display_mode,
+        sort_order=sort_order,
+        page=page,
+        max_page=max_page,
+        date_anchors=json.dumps(get_date_anchors(q, total, per_page)),
         thread_options_config=json.dumps(thread_options_config)
     )
 

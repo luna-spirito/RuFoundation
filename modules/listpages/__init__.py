@@ -18,6 +18,7 @@ from django.db.models.functions import Random, Coalesce, Round, Cast
 from web import threadvars
 from web.types import _ArticleType
 
+from .._csrf_protection import csrf_safe_method
 from .params import ListPagesParams
 from . import param
 
@@ -31,7 +32,7 @@ def has_content():
 def allow_api():
     return True
 
-
+@csrf_safe_method
 def api_get(context, _params):
     return {"pages": [page.full_name for page in query_pages(context.article, _params, context.user, context.path_params, False)[0]]}
 
@@ -102,6 +103,9 @@ def get_page_vars(page: _ArticleType)-> dict[str, str] | LazyDict:
         'fullname': lambda: articles.get_full_name(page),
         'title': lambda: page.title,
         'title_linked': lambda: '[[[%s|]]]' % (articles.get_full_name(page)),
+        'parent': lambda: page.parent.full_name if page.parent else None,
+        'parent_title': lambda: page.parent.title if page.parent else None,
+        'parent_linked': lambda: ('[[[%s|]]]' % (articles.get_full_name(page.parent))) if page.parent else None,
         'link': lambda: '/%s' % page.title,  # temporary, must be full page URL based on hostname
         'content': lambda: articles.get_latest_source(page),
         'rating': lambda: articles.get_formatted_rating(page),
@@ -268,6 +272,9 @@ def query_pages(article: Article, params: dict[str, str], viewer=None, path_para
                 q = q.filter(~Q(name__startswith='_'))
             case param.Type(type='hidden'):
                 q = q.filter(Q(name__startswith='_'))
+            case param.Type(type='all'):
+                # purposeful noop
+                q = q
             case param.Name(name=name):
                 q = q.filter(name=name)
             case param.NamePrefix(prefix=prefix):

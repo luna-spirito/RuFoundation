@@ -8,12 +8,13 @@ from django.utils.safestring import SafeString
 
 import renderer
 
-from modules.forumthread import get_post_contents
+from modules.forumthread import are_forum_reactions_hidden, get_post_contents, get_reply_target_info, get_thread_url, get_user_preferences
 from modules.listpages import render_pagination, render_date
 from renderer import RenderContext, render_template_from_string, render_user_to_html
 from renderer.utils import render_vote_to_html
 
 from web.controllers import articles
+from web.controllers import forum_reactions
 from web.models.articles import Vote
 from web.models.users import User
 from web.models.forum import ForumCategory, ForumSection, ForumPost
@@ -37,35 +38,69 @@ def highlight_mentions(text: str, usernames: set[str]) -> str:
     return SafeString(regex.sub(repl, text))
 
 
-def get_post_info(context, posts, category_for_comments, usernames: set[str]=set()):
+def render_author_mark(mark):
+    if not mark:
+        return ''
+    return render_template_from_string(
+        """
+        <span class="forum-author-mark" tabindex="0" aria-label="{{ mark }}" data-tooltip="{{ mark }}">
+            <i class="fas fa-feather-pointed" aria-hidden="true"></i>
+        </span>
+        """,
+        mark=mark
+    )
+
+
+def get_post_info(context, posts, category_for_comments, usernames: set[str]=set(), hide_reactions=False):
+    posts = list(posts)
     post_contents = get_post_contents(posts)
+    reaction_context = None if hide_reactions else forum_reactions.build_reaction_context(posts, context.user)
     post_info = []
 
     for post in posts:
         thread = post.thread
-        thread_url = '/forum/t-%d/%s' % (thread.id, articles.normalize_article_name(thread.name if thread.category_id else thread.article.display_name))
+        thread_url = get_thread_url(thread)
         author_vote = ''
-        is_op = thread.author == post.author
+        is_thread_author = post.author_id is not None and thread.author_id == post.author_id
+        is_op = is_thread_author
+        author_mark = 'Автор темы' if is_op else ''
 
         if thread.article:
+            is_article_author = post.author_id is not None and post.author in thread.article.authors.all()
             rating_mode = thread.article.settings.rating_mode
             author_vote = Vote.objects.filter(user=post.author, article=thread.article).last()
             author_vote = render_vote_to_html(author_vote, rating_mode)
-            if post.author in thread.article.authors.all():
-                is_op = True
+            is_op = is_article_author
+            author_mark = 'Автор статьи' if is_article_author else ''
         
         content = highlight_mentions(
             renderer.single_pass_render(post_contents.get(post.id, ('', None))[0], RenderContext(None, None, {}, context.user), 'message'),
             usernames
         )
+        reaction_state = None if hide_reactions else forum_reactions.serialize_post_reaction_state(post, context.user, reaction_context)
+        reactions = []
+        if reaction_state:
+            for summary in reaction_state['reactions']:
+                reaction = summary['reaction']
+                name = reaction.get('name') or ''
+                reactions.append({
+                    'name': name,
+                    'image_url': reaction.get('imageUrl'),
+                    'fallback': name[:1] or '?',
+                    'count': summary['count'],
+                    'is_inactive': not reaction.get('isActive'),
+                })
         render_post = {
             'id': post.id,
             'name': post.name.strip() or 'Перейти к сообщению',
             'is_op': is_op,
-            'author': render_user_to_html(post.author),
+            'author_mark': author_mark,
+            'author': render_user_to_html(post.author, extra_tail=render_author_mark(author_mark)),
             'author_rate': author_vote,
             'created_at': render_date(post.created_at),
             'content': content,
+            'reply_target': get_reply_target_info(context, thread, post, post_contents),
+            'reactions': reactions,
             'url': '%s#post-%d' % (thread_url, post.id),
             'category': {
                 'id': post.thread.category.id,
@@ -154,7 +189,14 @@ def render(context: RenderContext, params):
 
     usernames = set(User.objects.all().values_list(Lower('username'), flat=True))
     posts = q[(page - 1) * per_page:page * per_page]
-    post_info = get_post_info(context, posts, category_for_comments, usernames=usernames)
+    user_preferences = get_user_preferences(context.user)
+    post_info = get_post_info(
+        context,
+        posts,
+        category_for_comments,
+        usernames=usernames,
+        hide_reactions=are_forum_reactions_hidden(user_preferences),
+    )
 
     categories = []
     raw_categories = all_categories
@@ -202,11 +244,24 @@ def render(context: RenderContext, params):
                         <div class="post" id="post-{{ post.id }}">
                             <div class="long">
                                 <div class="head {% if post.is_op %}op-post{% endif %}">
-                                    <div class="title">
-                                        <a href="{{ post.url }}">{{ post.name }}</a>
-                                    </div>
+                                    {% if post.reply_target %}
+                                    <a class="forum-reply-target" href="{{ post.reply_target.url }}">
+                                        <i class="fas fa-reply" aria-hidden="true"></i>
+                                        <span class="forum-reply-target-label">На</span>
+                                        {% if post.reply_target.user %}
+                                            {{ post.reply_target.user }}
+                                        {% endif %}
+                                        {% if post.reply_target.title %}
+                                            <span class="forum-reply-target-title">{{ post.reply_target.title }}</span>
+                                        {% elif post.reply_target.excerpt %}
+                                            <span class="forum-reply-target-excerpt">{{ post.reply_target.excerpt }}</span>
+                                        {% endif %}
+                                    </a>
+                                    {% endif %}
+                                    <div class="title">{% if post.name %}<a href="{{ post.url }}">{{ post.name }}</a>{% endif %}</div>
                                     <div class="info">
-                                        {{ post.author }} {{ post.created_at }} {{ post.author_rate }}
+                                        {{ post.author }} {{ post.created_at }}
+                                        {{ post.author_rate }}
                                     </div>
                                     <span>
                                         в дискуссии
@@ -220,6 +275,22 @@ def render(context: RenderContext, params):
                                 <div class="content">
                                     {{ post.content }}
                                 </div>
+                                {% if post.reactions %}
+                                <div class="forum-reactions forum-reactions-static" aria-label="Реакции к сообщению">
+                                    <div class="forum-reaction-list">
+                                        {% for reaction in post.reactions %}
+                                        <span class="forum-reaction-chip forum-reaction-chip-static {% if reaction.is_inactive %}is-inactive{% endif %}" data-tooltip="{{ reaction.name }}: {{ reaction.count }}">
+                                            {% if reaction.image_url %}
+                                                <img class="forum-reaction-chip-image" src="{{ reaction.image_url }}" alt="{{ reaction.name }}">
+                                            {% else %}
+                                                <span class="forum-reaction-chip-image forum-reaction-image-fallback">{{ reaction.fallback }}</span>
+                                            {% endif %}
+                                            <span class="forum-reaction-chip-count">{{ reaction.count }}</span>
+                                        </span>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>

@@ -9,6 +9,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm
 from django.contrib import admin
 from django.urls import path
+from django.utils.html import format_html
 from django import forms
 
 import web.fields
@@ -72,6 +73,17 @@ class SettingsAdmin(admin.StackedInline):
     model = Settings
     can_delete = False
     max_num = 1
+    fieldsets = (
+        (None, {
+            'fields': ('rating_mode', 'can_user_create_tags')
+        }),
+        ('Реакции форума', {
+            'fields': ('forum_reactions_per_user', 'forum_reaction_types_per_post')
+        }),
+        ('Форум', {
+            'fields': ('forum_post_max_depth',)
+        }),
+    )
 
 
 class CategoryForm(forms.ModelForm):
@@ -217,6 +229,37 @@ class ForumCategoryAdmin(admin.ModelAdmin):
     list_display = ['name', 'section']
 
 
+class ForumReactionForm(forms.ModelForm):
+    class Meta:
+        model = ForumReaction
+        widgets = {
+            'name': forms.TextInput,
+            'image': forms.FileInput(attrs={'accept': 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.svg'}),
+        }
+        fields = '__all__'
+
+
+@admin.register(ForumReaction)
+class ForumReactionAdmin(SortableAdminMixin, admin.ModelAdmin):
+    form = ForumReactionForm
+    search_fields = ['name']
+    list_filter = ['is_active', 'is_hidden_from_picker']
+    list_display = ['image_preview', 'name', 'is_active', 'is_hidden_from_picker']
+    list_editable = ['is_active', 'is_hidden_from_picker']
+    ordering = ['sort_order', 'id']
+
+    class Media:
+        css = {
+            'all': ('admin/forum-reaction-admin.css',),
+        }
+
+    @admin.display(description='Картинка')
+    def image_preview(self, obj):
+        if not obj.image:
+            return ''
+        return format_html('<img src="{}" alt="" style="width: 24px; height: 24px; object-fit: contain;">', obj.image_url)
+
+
 class AdvancedUserChangeForm(UserChangeForm):
     class Meta:
         # fix username and wikidot_username input fields type
@@ -244,7 +287,7 @@ class AdvancedUserAdmin(ProtectSensitiveAdmin, UserAdmin):
     fieldsets = UserAdmin.fieldsets
     fieldsets[0][1]['fields'] = ('username', 'wikidot_username', 'type', 'password', 'api_key', '_op_index')
     fieldsets[1][1]['fields'] += ('bio', 'avatar')
-    fieldsets[2][1]['fields'] = ('is_active', 'inactive_until', 'is_forum_active', 'forum_inactive_until', 'roles', 'is_superuser')
+    fieldsets[2][1]['fields'] = ('is_active', 'inactive_until', 'is_forum_active', 'forum_inactive_until', 'is_forum_reactions_disabled', 'forum_reactions_disabled_until', 'roles', 'is_superuser')
 
     @admin.display(ordering='username_or_wd')
     def username_or_wd(self, obj):
@@ -266,7 +309,7 @@ class AdvancedUserAdmin(ProtectSensitiveAdmin, UserAdmin):
 
     def get_form(self, request, *args, **kwargs):
         form = super().get_form(request, *args, **kwargs)
-        not_required = ['inactive_until', 'forum_inactive_until', 'wikidot_username']
+        not_required = ['inactive_until', 'forum_inactive_until', 'forum_reactions_disabled_until', 'wikidot_username']
         for not_required_field in not_required:
             if not_required_field in form.base_fields:
                 form.base_fields[not_required_field].required = False
@@ -473,4 +516,3 @@ class RoleAdmin(SortableAdminMixin, admin.ModelAdmin):
         if obj and obj.slug  in ['everyone', 'registered']:
             return self.readonly_fields + ("slug",)
         return self.readonly_fields
-    

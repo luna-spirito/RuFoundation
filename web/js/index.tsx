@@ -13,6 +13,7 @@ import { makeSiteChanges } from './articles/site-changes'
 import { makeTabView } from './articles/tabview'
 import { makeTOC } from './articles/toc'
 import { makeWantedPages } from './articles/wanted-pages'
+import { makeFoldableListContainer } from "./articles/foldable-list-contaner";
 import ForumNewPost from './entrypoints/forum-new-post'
 import ForumNewThread from './entrypoints/forum-new-thread'
 import ForumPostOptions from './entrypoints/forum-post-options'
@@ -25,8 +26,10 @@ import { makeRecentPosts } from './forum/recent-posts-pagination'
 import { makeForumThread } from './forum/thread-pagination'
 import ReactivePage from './reactive/router'
 import { makePasswordToggle } from './util/password'
+import { bindUserPopovers } from './util/user-popover'
 import AdminSusUsers from './entrypoints/admin-sus-users'
 import { renderTo } from '~util/react-render-into'
+import { makeCustomTooltips } from './util/tooltip'
 
 attachApiMessageListener()
 
@@ -84,6 +87,8 @@ window.addEventListener('DOMContentLoaded', () => {
         makeInterwiki(node)
       } else if (node.classList.contains('w-admin-sus-users')) {
         renderTo(node, <AdminSusUsers />)
+      } else if (node.classList.contains('foldable-list-container')) {
+        makeFoldableListContainer(node)
       }
     } catch (e) {
       console.error('Failed to process node', node, e)
@@ -96,6 +101,8 @@ window.addEventListener('DOMContentLoaded', () => {
       processNode(node)
     }
   })
+  makeCustomTooltips(document.body)
+  bindUserPopovers(document.body)
 
   const reactiveRoot: HTMLElement | null = document.querySelector('#reactive-root')
   if (reactiveRoot) {
@@ -116,6 +123,8 @@ window.addEventListener('DOMContentLoaded', () => {
               processNode(subnode)
             }
           })
+          makeCustomTooltips(node)
+          bindUserPopovers(node)
         })
       } else if (record.type === 'attributes') {
         if (record.attributeName === 'class' && record.target) {
