@@ -210,6 +210,10 @@ REMOVE_SLASH = True
 # Fixes
 SECURE_CONTENT_TYPE_NOSNIFF = False
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Don't send Cross-Origin-Opener-Policy (Django >= 4.0 default is "same-origin"):
+# any COOP value besides unsafe-none makes browsers block site pages opened as
+# popups from sandboxed FTML [[html]]/[[iframe]] embeds
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
 
 # Default avatars
